@@ -59,10 +59,10 @@ class Container(containers.DeclarativeContainer):
         session=db_session
     )
 
-    # ========== Drivers (Phase 1 Task 1.4) ==========
-    # driver_factory = providers.Singleton(
-    #     DriverFactory
-    # )
+    # ========== Drivers ==========
+    driver_factory = providers.Singleton(
+        lambda: __import__('app.core.drivers', fromlist=['driver_factory']).driver_factory
+    )
 
     # ========== Services (Phase 2) ==========
     # account_service = providers.Factory(

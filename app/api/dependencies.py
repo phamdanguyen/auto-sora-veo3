@@ -91,10 +91,24 @@ def get_job_repository(db: Session = Depends(get_db)) -> JobRepository:
     return JobRepository(db)
 
 
-# ========== Driver Factory (Phase 1 Task 1.4) ==========
-# def get_driver_factory() -> DriverFactory:
-#     """Dependency để lấy DriverFactory"""
-#     return container.driver_factory()
+# ========== Driver Factory ==========
+def get_driver_factory():
+    """
+    Dependency để lấy DriverFactory
+
+    Returns:
+        Global driver_factory instance
+
+    Usage:
+        @router.post("/generate")
+        async def generate(
+            factory = Depends(get_driver_factory)
+        ):
+            driver = factory.create_driver("sora", ...)
+            return await driver.generate_video(...)
+    """
+    from ..core.drivers import driver_factory
+    return driver_factory
 
 
 # ========== Services (Phase 2) ==========
