@@ -12,3 +12,5 @@ selenium
 undetected-chromedriver
 setuptools
 curl_cffi
+dependency-injector
+pyjwt
