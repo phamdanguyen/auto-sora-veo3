@@ -58,7 +58,19 @@ def start_server(port):
     try:
         log_message(f"DEBUG: Entering start_server thread for port {port}")
         from app.main import app
+        from app.core.logger import ListLogHandler
+        import logging
+        
         log_message("DEBUG: app.main imported successfully")
+        
+        # Configure logging to capture Uvicorn logs
+        # Get the root logger or uvicorn logger
+        uvicorn_logger = logging.getLogger("uvicorn")
+        uvicorn_logger.addHandler(ListLogHandler())
+        
+        # Also capture FastAPI/App logs
+        root_logger = logging.getLogger()
+        root_logger.addHandler(ListLogHandler())
         
         # Run uvicorn Programmatically
         # log_level can be set to "debug" for more info if needed
@@ -75,11 +87,40 @@ def on_closed():
     os._exit(0)
 
 
-# Redirect stdout/stderr to a file for debugging in frozen mode
-def log_message(msg):
-    with open("debug_log.txt", "a", encoding="utf-8") as f:
-        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {msg}\n")
-    print(msg) # Still print to console if available
+# --- CONFIGURATION ---
+LOG_FILE = "debug_log.txt"
+
+# Add parent directory to path to import app modules if needed
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+try:
+    from app.core.logger import log_manager
+except ImportError:
+    log_manager = None
+    import datetime
+
+def log_message(message):
+    """Logs a message to the file, console, and LogStreamManager."""
+    try:
+        timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+    except:
+        timestamp = "UNKNOWN_TIME"
+        
+    formatted_message = f"{timestamp} - {message}"
+    
+    # 1. Write to file
+    try:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(formatted_message + "\n")
+    except:
+        pass
+        
+    # 2. Print to console
+    print(formatted_message)
+    
+    # 3. Stream to WebSocket Manager
+    if log_manager:
+        log_manager.add_log(formatted_message, "INFO")
 
 if __name__ == "__main__":
     try:
@@ -160,10 +201,11 @@ if __name__ == "__main__":
             window = webview.create_window(
                 'Uni-Video Automation', 
                 f'http://127.0.0.1:{server_port}',
-                width=1280,
+                width=1280, # Fallback size
                 height=800,
                 resizable=True,
-                confirm_close=True
+                confirm_close=True,
+                maximized=True  # Start maximized
             )
             # IMPORTANT: trigger on_closed only when the window is actually closed (via events) 
             # or after start returns.

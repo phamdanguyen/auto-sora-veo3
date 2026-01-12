@@ -30,6 +30,10 @@ args = [
     '--hidden-import=clr',
     '--hidden-import=System',
     '--hidden-import=System.Windows.Forms',
+    '--hidden-import=System.Collections',
+    '--hidden-import=System.Threading',
+    '--hidden-import=System.Drawing',
+    '--hidden-import=pythonnet',
     # Add other hidden imports as needed
 ]
 

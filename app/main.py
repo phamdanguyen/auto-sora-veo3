@@ -7,7 +7,18 @@ import logging
 import sys
 import asyncio
 
-# Windows subprocess support for Playwright
+# ... (imports) ...
+
+# CORS (allow all for local dev)
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origin_regex=".*", # Force allow ALL origins (including null, file, etc)
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
+
+
 # This must be set BEFORE any asyncio event loop is created
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -88,6 +99,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Uni-Video Automation", lifespan=lifespan)
 
+
+
 # Helper to get path to resource
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -115,14 +128,8 @@ ABS_UPLOAD_DIR = os.path.abspath("data/uploads")
 os.makedirs(ABS_UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=ABS_UPLOAD_DIR), name="uploads")
 
-# CORS (allow all for local dev)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+
 
 from fastapi.responses import FileResponse
 import asyncio

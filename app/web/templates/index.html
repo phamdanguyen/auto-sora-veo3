@@ -18,25 +18,93 @@
 
     <div class="flex h-screen">
         <!-- Sidebar -->
-        <div class="w-64 bg-gray-900 text-white flex flex-col shadow-lg z-10">
-            <div class="p-5 text-2xl font-bold bg-gray-800 flex items-center space-x-2">
-                <span>Uni-Video</span>
+        <div :class="sidebarCollapsed ? 'w-20' : 'w-64'"
+            class="bg-gray-900 text-white flex flex-col shadow-lg z-10 transition-all duration-300 ease-in-out">
+            <div class="p-5 border-b border-gray-800 flex items-center justify-between h-20">
+                <div class="flex items-center space-x-2 overflow-hidden"
+                    :class="sidebarCollapsed ? 'px-0 justify-center w-full' : ''">
+                    <span class="text-2xl font-bold whitespace-nowrap" x-show="!sidebarCollapsed">Uni-Video</span>
+                    <span class="text-xl font-bold" x-show="sidebarCollapsed">UV</span>
+                </div>
+                <button @click="sidebarCollapsed = !sidebarCollapsed" x-show="!sidebarCollapsed"
+                    class="text-gray-400 hover:text-white focus:outline-none">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>
+                    </svg>
+                </button>
             </div>
-            <nav class="flex-1 p-4 space-y-2">
+
+            <div x-show="sidebarCollapsed" class="flex justify-center py-2 border-b border-gray-800">
+                <button @click="sidebarCollapsed = !sidebarCollapsed" class="text-gray-400 hover:text-white">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M13 5l7 7-7 7M5 5l7 7-7 7"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <nav class="flex-1 p-2 space-y-2 overflow-y-auto">
                 <a href="#" @click="currentTab = 'dashboard'"
-                    :class="{'bg-blue-600': currentTab === 'dashboard', 'hover:bg-gray-700': currentTab !== 'dashboard'}"
-                    class="block p-3 rounded transition-colors duration-200">Dashboard</a>
+                    :class="{'bg-blue-600': currentTab === 'dashboard', 'hover:bg-gray-700': currentTab !== 'dashboard', 'justify-center': sidebarCollapsed}"
+                    class="flex items-center p-3 rounded transition-colors duration-200 group relative">
+                    <svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z">
+                        </path>
+                    </svg>
+                    <span :class="sidebarCollapsed ? 'hidden' : 'ml-3 whitespace-nowrap'">Dashboard</span>
+                    <!-- Tooltip -->
+                    <div x-show="sidebarCollapsed"
+                        class="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap pointer-events-none">
+                        Dashboard</div>
+                </a>
+
                 <a href="#" @click="currentTab = 'accounts'"
-                    :class="{'bg-blue-600': currentTab === 'accounts', 'hover:bg-gray-700': currentTab !== 'accounts'}"
-                    class="block p-3 rounded transition-colors duration-200">Accounts</a>
+                    :class="{'bg-blue-600': currentTab === 'accounts', 'hover:bg-gray-700': currentTab !== 'accounts', 'justify-center': sidebarCollapsed}"
+                    class="flex items-center p-3 rounded transition-colors duration-200 group relative">
+                    <svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z">
+                        </path>
+                    </svg>
+                    <span :class="sidebarCollapsed ? 'hidden' : 'ml-3 whitespace-nowrap'">Accounts</span>
+                    <div x-show="sidebarCollapsed"
+                        class="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap pointer-events-none">
+                        Accounts</div>
+                </a>
+
                 <a href="#" @click="currentTab = 'jobs'; fetchJobs()"
-                    :class="{'bg-blue-600': currentTab === 'jobs', 'hover:bg-gray-700': currentTab !== 'jobs'}"
-                    class="block p-3 rounded transition-colors duration-200">Jobs Queue</a>
+                    :class="{'bg-blue-600': currentTab === 'jobs', 'hover:bg-gray-700': currentTab !== 'jobs', 'justify-center': sidebarCollapsed}"
+                    class="flex items-center p-3 rounded transition-colors duration-200 group relative">
+                    <svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M19 11H5m14-4H5m14 8H5m14 4H5"></path>
+                    </svg>
+                    <span :class="sidebarCollapsed ? 'hidden' : 'ml-3 whitespace-nowrap'">Jobs Queue</span>
+                    <div x-show="sidebarCollapsed"
+                        class="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap pointer-events-none">
+                        Jobs Queue</div>
+                </a>
+
                 <a href="#" @click="currentTab = 'history'; fetchJobs()"
-                    :class="{'bg-blue-600': currentTab === 'history', 'hover:bg-gray-700': currentTab !== 'history'}"
-                    class="block p-3 rounded transition-colors duration-200">Job Complete</a>
+                    :class="{'bg-blue-600': currentTab === 'history', 'hover:bg-gray-700': currentTab !== 'history', 'justify-center': sidebarCollapsed}"
+                    class="flex items-center p-3 rounded transition-colors duration-200 group relative">
+                    <svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01">
+                        </path>
+                    </svg>
+                    <span :class="sidebarCollapsed ? 'hidden' : 'ml-3 whitespace-nowrap'">Job Complete</span>
+                    <div x-show="sidebarCollapsed"
+                        class="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap pointer-events-none">
+                        Job Complete</div>
+                </a>
             </nav>
-            <div class="p-4 text-sm text-gray-500 border-t border-gray-700">v1.1.0</div>
+            <div class="p-4 text-sm text-gray-500 border-t border-gray-700 bg-gray-900">
+                <div :class="sidebarCollapsed ? 'text-center text-xs' : ''"
+                    x-text="sidebarCollapsed ? 'v1.1' : 'v1.1.0'"></div>
+            </div>
         </div>
 
         <!-- Main Content -->
@@ -557,54 +625,58 @@
                 </div>
             </div>
 
-            <!-- Edit Job Modal -->
-            <div x-show="editingJob"
-                class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]" x-cloak>
-                <div class="bg-white p-8 rounded-lg shadow-xl w-[500px] transform transition-all"
-                    @click.away="editingJob = null">
-                    <h3 class="text-xl font-bold mb-4 text-gray-800">Edit Job <span
-                            x-text="'#' + editingJob?.id"></span></h3>
+        </div>
+    </div>
 
-                    <template x-if="editingJob">
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Prompt</label>
-                                <textarea x-model="editingJob.prompt" rows="4"
-                                    class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
-                            </div>
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Duration (s)</label>
-                                    <select x-model="editingJob.duration"
-                                        class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500">
-                                        <option value="5">5 seconds</option>
-                                        <option value="10">10 seconds</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Aspect Ratio</label>
-                                    <select x-model="editingJob.aspect_ratio"
-                                        class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500">
-                                        <option value="16:9">16:9 (Landscape)</option>
-                                        <option value="9:16">9:16 (Portrait)</option>
-                                        <option value="1:1">1:1 (Square)</option>
-                                    </select>
-                                </div>
-                            </div>
 
-                            <!-- Image Upload for Edit -->
-                            <div class="mt-4">
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Upload Image (Changes
-                                    Request)</label>
 
-                                <div class="flex items-center space-x-2" x-show="editingJob.image_path">
-                                    <span class="text-xs text-green-600 font-medium">Currently attached: <span
-                                            x-text="editingJob.image_path.split(/[\\/]/).pop()"></span></span>
-                                    <button @click="editingJob.image_path = null"
-                                        class="text-red-500 text-xs hover:underline">Remove</button>
-                                </div>
+    <!-- Edit Job Modal -->
+    <div x-show="editingJob" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]"
+        x-cloak>
+        <div class="bg-white p-8 rounded-lg shadow-xl w-[500px] transform transition-all"
+            @click.away="editingJob = null">
+            <h3 class="text-xl font-bold mb-4 text-gray-800">Edit Job <span x-text="'#' + editingJob?.id"></span></h3>
 
-                                <input type="file" @change="async (e) => {
+            <template x-if="editingJob">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Prompt</label>
+                        <textarea x-model="editingJob.prompt" rows="4"
+                            class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Duration (s)</label>
+                            <select x-model="editingJob.duration"
+                                class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500">
+                                <option value="5">5 seconds</option>
+                                <option value="10">10 seconds</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Aspect Ratio</label>
+                            <select x-model="editingJob.aspect_ratio"
+                                class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500">
+                                <option value="16:9">16:9 (Landscape)</option>
+                                <option value="9:16">9:16 (Portrait)</option>
+                                <option value="1:1">1:1 (Square)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Image Upload for Edit -->
+                    <div class="mt-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Upload Image (Changes
+                            Request)</label>
+
+                        <div class="flex items-center space-x-2" x-show="editingJob.image_path">
+                            <span class="text-xs text-green-600 font-medium">Currently attached: <span
+                                    x-text="editingJob.image_path.split(/[\\/]/).pop()"></span></span>
+                            <button @click="editingJob.image_path = null"
+                                class="text-red-500 text-xs hover:underline">Remove</button>
+                        </div>
+
+                        <input type="file" @change="async (e) => {
                                     /* Reuse upload logic but set editingJob.image_path */
                                      const file = e.target.files[0];
                                      if (!file) return;
@@ -621,21 +693,21 @@
                                      } catch(err) { alert('Error: ' + err); }
                                      e.target.value = '';
                                 }" accept="image/*"
-                                    class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-                            </div>
-                        </div>
-                    </template>
-
-                    <div class="flex justify-end space-x-2 mt-6">
-                        <button @click="editingJob = null"
-                            class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
-                        <button @click="updateJob()"
-                            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded shadow">Save
-                            Changes</button>
+                            class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
                     </div>
                 </div>
+            </template>
+
+            <div class="flex justify-end space-x-2 mt-6">
+                <button @click="editingJob = null"
+                    class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                <button @click="updateJob()"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded shadow">Save
+                    Changes</button>
             </div>
         </div>
+    </div>
+    </div>
     </div>
 
     <!-- Add Account Modal -->
@@ -838,6 +910,7 @@
         function appData() {
             return {
                 currentTab: 'dashboard',
+                sidebarCollapsed: false,
                 showAddAccountModal: false,
                 showAddJobModal: false,
                 selectedJob: null,
@@ -973,11 +1046,13 @@
                     }
                 },
 
+
+
                 init() {
                     this.fetchAccounts();
                     this.fetchJobs();
-                    this.fetchSystemStatus(); // First fetch
-                    setInterval(() => { this.fetchJobs(); this.fetchSystemStatus(); }, 5000); // Poll for updates
+                    this.fetchSystemStatus();
+                    setInterval(() => { this.fetchJobs(); this.fetchSystemStatus(); }, 5000);
                 },
 
                 async fetchSystemStatus() {

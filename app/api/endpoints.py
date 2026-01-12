@@ -797,7 +797,35 @@ class BulkActionRequest(BaseModel):
     action: str # retry_failed, delete_all, clear_completed
     job_ids: Optional[List[int]] = None # Optional list of specific IDs
 
-# --- File Upload ---
+from fastapi import WebSocket, WebSocketDisconnect
+from ..core.logger import log_manager
+
+@router.websocket("/ws/logs")
+async def websocket_logs(websocket: WebSocket):
+    await websocket.accept()
+    log_manager.connected_clients.append(websocket)
+    
+    try:
+        # Send Hello Message
+        await websocket.send_json({"message": "✅ SYSTEM LOGS CONNECTED", "level": "INFO"})
+        
+        # Send buffer first
+        buffer_list = list(log_manager.buffer)
+        for entry in buffer_list:
+            await websocket.send_json(entry)
+            
+        # Keep alive loop
+        while True:
+            await websocket.receive_text() # Just wait for disconnect
+    except WebSocketDisconnect:
+        if websocket in log_manager.connected_clients:
+            log_manager.connected_clients.remove(websocket)
+    except Exception as e:
+        logger.error(f"WebSocket Error: {e}")
+        if websocket in log_manager.connected_clients:
+            log_manager.connected_clients.remove(websocket)
+
+# --- Other Endpoints ---
 @router.post("/jobs/upload")
 async def upload_file(file: UploadFile = File(...)):
     import shutil
