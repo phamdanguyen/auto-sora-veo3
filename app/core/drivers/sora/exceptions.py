@@ -9,3 +9,7 @@ class VerificationRequiredException(Exception):
 class LoginFailedException(Exception):
     """Raised when automation fails to login for other reasons"""
     pass
+
+class PublicLinkNotFoundException(Exception):
+    """Raised when public/share link cannot be retrieved"""
+    pass

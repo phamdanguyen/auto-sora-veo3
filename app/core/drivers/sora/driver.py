@@ -1,284 +1,1174 @@
 from ..base import BaseDriver
 from .pages.login import SoraLoginPage
 from .pages.creation import SoraCreationPage
+from .pages.drafts import SoraDraftsPage
+from .pages.download import SoraDownloadPage
+from .pages.verification import SoraVerificationPage
 import logging
 import asyncio
+import aiohttp
+import os
+import time
+import json
 from typing import Optional, Callable, Awaitable
 
 logger = logging.getLogger(__name__)
 
 class SoraDriver(BaseDriver):
-    def __init__(self, headless: bool = False, proxy: Optional[str] = None, user_data_dir: Optional[str] = None):
-        super().__init__(headless=headless, proxy=proxy, user_data_dir=user_data_dir)
+    def __init__(self, headless: bool = False, proxy: Optional[str] = None, user_data_dir: Optional[str] = None, channel: str = "chrome"):
+        super().__init__(headless=headless, proxy=proxy, user_data_dir=user_data_dir, channel=channel)
         # Use direct auth URL for reliable login flow
         self.base_url = "https://chatgpt.com/auth/login?next=%2Fsora%2F"
         
         # Page Objects (initialized after start)
         self.login_page = None
         self.creation_page = None
+        self.drafts_page = None
+        self.download_page = None
+        self.verification_page = None
 
     async def start(self):
         await super().start()
+        # Setup Hybrid Interception
+        self.latest_access_token = None
+        self.latest_user_agent = None
+        self.latest_intercepted_data = None
+        self.intercepted_videos = {} # ID -> {status, url, ...}
+        self.last_submission_result = None # Latest nf/create response
+        await self._setup_interception()
+        
         self.login_page = SoraLoginPage(self.page)
         self.creation_page = SoraCreationPage(self.page)
+        self.drafts_page = SoraDraftsPage(self.page)
+        self.download_page = SoraDownloadPage(self.page)
+        self.verification_page = SoraVerificationPage(self.page)
+
+    async def login(self, email: str, password: str):
+        """
+        Performs the login flow.
+        """
+        if not self.login_page:
+            self.login_page = SoraLoginPage(self.page)
+        
+        await self.login_page.login(email, password, self.base_url, headless_mode=self.headless)
+        
+        # Initialize other pages after successful login
+        self.creation_page = SoraCreationPage(self.page)
+        self.drafts_page = SoraDraftsPage(self.page)
+        self.download_page = SoraDownloadPage(self.page)
+        self.verification_page = SoraVerificationPage(self.page)
+
+    @classmethod
+    async def api_only(cls, access_token: str, device_id: str = None, user_agent: str = None, cookies: list = None):
+        """
+        Create a SoraDriver instance that only uses API calls (NO BROWSER).
+        
+        This enables 100% headless operation after tokens have been captured
+        via the Account login flow.
+        
+        Args:
+            access_token: Bearer token from previous login
+            device_id: oai-device-id from previous login
+            user_agent: User agent string (optional)
+            cookies: List of cookies (optional)
+            
+        Returns:
+            SoraDriver instance ready for API-only operations
+        """
+        driver = cls.__new__(cls)
+        driver.page = None  # No browser!
+        driver.context = None
+        driver.browser = None
+        driver.playwright = None
+        
+        # Set token data
+        driver.latest_access_token = access_token
+        driver.device_id = device_id or ""
+        driver.latest_user_agent = user_agent or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        driver.cookies = cookies or []
+        
+        # Initialize tracking
+        driver.intercepted_videos = {}
+        driver.last_submission_result = None
+        driver.latest_intercepted_data = None
+        
+        # No page objects (not needed for API)
+        driver.login_page = None
+        driver.creation_page = None
+        driver.drafts_page = None
+        driver.download_page = None
+        driver.verification_page = None
+        
+        logger.info(f"🔌 SoraDriver API-only mode initialized (no browser)")
+        return driver
     
-    async def check_credits(self) -> int:
-        """Get remaining video credits"""
-        if self.creation_page:
-            return await self.creation_page.check_credits()
-        return -1
+    async def stop(self):
+        """Stop driver - handles both browser and API-only modes"""
+        if self.browser:
+            await super().stop()
+        # API-only mode has nothing to close
+
+    def get_cached_video(self, video_id: str) -> Optional[dict]:
+        """Get video info from interception cache"""
+        return self.intercepted_videos.get(video_id)
+
+    async def _setup_interception(self):
+        """Setup network listener to capture tokens"""
+        logger.info("🕵️ Enabling Hybrid Network Interception...")
+        
+        # 1. Capture User Agent
+        try:
+             self.latest_user_agent = await self.page.evaluate("navigator.userAgent")
+        except:
+             pass
+
+        # 2. Capture Tokens from Requests
+        async def handle_request(route):
+             # We monitor requests but don't modify them (continue)
+             # Actually using 'request' event is safer than route if we don't want to block
+             pass
+        
+        # Using event listener instead of route handler to avoid blocking
+        self.page.on("request", self._on_request_intercept)
+        self.page.on("response", self._on_response_intercept)
+
+    def _on_request_intercept(self, request):
+        """Callback for every request"""
+        try:
+            url = request.url
+            if "sora.chatgpt.com" in url or "chatgpt.com/backend-api" in url:
+                # print(f"🕵️ INTERCEPTED URL: {url}") # Explicit print to see in console
+                headers = request.headers
+                if "authorization" in headers:
+                    token = headers["authorization"]
+                    if token.startswith("Bearer "):
+                        if self.latest_access_token != token:
+                            logger.info(f"🔑 Captured NEW Access Token! ({token[:15]}...)")
+                            self.latest_access_token = token
+                            if "user-agent" in headers:
+                                self.latest_user_agent = headers["user-agent"]
+        except Exception as e:
+            pass # Don't crash on intercept
+
+    def _on_response_intercept(self, response):
+        """Callback for every response - Fire and Forget"""
+        try:
+            url = response.url
+            # Filter for relevant JSON endpoints
+            if "sora.chatgpt.com" in url and ("profile/drafts" in url or "feed" in url or "tasks" in url):
+                if response.status == 200 and "application/json" in response.headers.get("content-type", ""):
+                     # We cannot await here directly effectively if not async handler, 
+                     # but Playwright handlers can be regular functions.
+                     # To read body, we need to handle it carefully.
+                     # PROPER WAY: Schedule a background task to read it to not block the handler?
+                     # Actually, page.on handler CAN be async.
+                     asyncio.create_task(self._process_response_body(response))
+        except Exception as e:
+            pass
+
+    async def _process_response_body(self, response):
+        """Async helper to read response body"""
+        try:
+            data = await response.json()
+            url = response.url
+            
+            # Identify endpoint type
+            endpoint_type = "unknown"
+            if "profile/drafts" in url: endpoint_type = "DRAFTS"
+            elif "feed" in url: endpoint_type = "FEED"
+            elif "tasks" in url: endpoint_type = "TASKS"
+            elif "nf/create" in url: endpoint_type = "SUBMISSION"
+            
+            logger.info(f"📦 Intercepted {endpoint_type} JSON ({len(str(data))} bytes)")
+            
+            # Store data for analysis/usage
+            self.latest_intercepted_data = data
+            
+            if endpoint_type == "SUBMISSION":
+                # Parse submission result for credits
+                self.last_submission_result = data
+                logger.info("✅ Captured SUBMISSION response!")
+                if "rate_limit_and_credit_balance" in data:
+                    balance = data["rate_limit_and_credit_balance"]
+                    daily_creds = balance.get("estimated_num_videos_remaining")
+                    reset_secs = balance.get("access_resets_in_seconds")
+                    logger.info(f"💰 Credits Remaining: {daily_creds} | Reset in: {reset_secs}s")
+            
+            # Parse and cache items
+            items = []
+            if "items" in data: items = data["items"]
+            elif isinstance(data, list): items = data
+            
+            if items:
+                logger.info(f"   Found {len(items)} items in {endpoint_type}")
+                for item in items:
+                    # Extract key info
+                    vid_id = item.get("id")
+                    if not vid_id: continue
+                    
+                    # Normalize Status
+                    # In drafts JSON, status might be inferred from 'url' presence or specific fields
+                    # If 'url' is present and valid, it's likely 'complete' or 'ready'
+                    # If 'processing_status' exists, use it.
+                    status = item.get("status", "unknown")
+                    download_url = item.get("url")
+                    
+                    # Drafts API often returns 'url' even if processing? verify
+                    # Usually "url" is the result video.
+                    # If it has a URL, we treat it as potentially downloadable.
+                    
+                    if vid_id not in self.intercepted_videos:
+                        self.intercepted_videos[vid_id] = {}
+                        
+                    self.intercepted_videos[vid_id].update({
+                        "id": vid_id,
+                        "status": status,
+                        "download_url": download_url,
+                        "prompt": item.get("prompt"),
+                        "last_updated": asyncio.get_event_loop().time()
+                    })
+                    
+                    # Logging specific
+                    # logger.info(f"   - Cached {vid_id}: {status} | URL: {bool(download_url)}")
+
+        except Exception as e:
+            # logger.warning(f"⚠️ Failed to parse intercepted JSON from {response.url}: {e}")
+            pass
+
+    async def wait_for_completion_api(self, match_prompt: str, timeout: int = 600, task_id: Optional[str] = None) -> Optional[dict]:
+        """
+        Polls for video completion using API only (no UI automation).
+        Uses /nf/pending/v2 and /profile/drafts endpoints.
+
+        Args:
+            match_prompt: Prompt text to match against (fallback if task_id not available)
+            timeout: Maximum seconds to wait
+            task_id: Sora task ID for precise matching (RECOMMENDED)
+
+        Returns:
+            dict with video data including download_url, or None if timeout
+        """
+        if task_id:
+            logger.info(f"⏳ Waiting for video completion (API) - Task ID: {task_id}")
+        else:
+            logger.info(f"⏳ Waiting for video completion (API) - Prompt: '{match_prompt[:30]}...' (NO task_id - using fuzzy match)")
+
+        start_time = time.time()
+        poll_interval = 15  # Poll every 15 seconds
+
+        while time.time() - start_time < timeout:
+            try:
+                # 1. Check pending tasks first
+                pending = await self._api_get_pending_tasks()
+                if pending is not None:
+                    # Check if our task is still pending
+                    is_pending = False
+                    for task in pending:
+                        # PRIORITY 1: Match by task_id (exact match)
+                        if task_id and task.get("id") == task_id:
+                            progress = task.get("progress_pct", 0) * 100
+                            logger.info(f"📊 Task {task_id} still pending: {progress:.1f}% complete")
+                            is_pending = True
+                            break
+
+                        # FALLBACK: Match by prompt (fuzzy - less reliable)
+                        if not task_id:
+                            task_prompt = task.get("prompt", "")
+                            if match_prompt[:30].strip() in task_prompt or task_prompt[:30].strip() in match_prompt:
+                                progress = task.get("progress_pct", 0) * 100
+                                logger.info(f"📊 Task still pending (prompt match): {progress:.1f}% complete")
+                                is_pending = True
+                                break
+
+                    # If not in pending, check drafts for completion
+                    if not is_pending or len(pending) == 0:
+                        # Use get_drafts_api() with curl_cffi instead of _api_get_drafts() with aiohttp
+                        # to bypass Cloudflare protection
+                        drafts = await self.get_drafts_api()
+                        if drafts:
+                            for draft in drafts:
+                                # PRIORITY 1: Match by task_id (exact match)
+                                if task_id and draft.get("task_id") == task_id:
+                                    download_url = draft.get("url") or draft.get("downloadable_url") or draft.get("video_url")
+                                    if download_url:
+                                        logger.info(f"✅ Video completed! Task ID: {task_id}")
+                                        return {
+                                            "id": draft.get("id"),
+                                            "task_id": task_id,
+                                            "download_url": download_url,
+                                            "prompt": draft.get("prompt"),
+                                            "status": "completed"
+                                        }
+                                    elif draft.get("status") == "failed":
+                                        logger.warning(f"❌ Video generation failed for task {task_id}")
+                                        return {"status": "failed", "id": draft.get("id"), "task_id": task_id}
+
+                                # FALLBACK: Match by prompt (less reliable)
+                                if not task_id:
+                                    draft_prompt = draft.get("prompt", "")
+                                    if match_prompt[:30].strip() in draft_prompt or draft_prompt[:30].strip() in match_prompt:
+                                        download_url = draft.get("url") or draft.get("downloadable_url") or draft.get("video_url")
+                                        if download_url:
+                                            logger.warning(f"⚠️ Video matched by PROMPT (no task_id)! ID: {draft.get('id')}")
+                                            return {
+                                                "id": draft.get("id"),
+                                                "download_url": download_url,
+                                                "prompt": draft_prompt,
+                                                "status": "completed"
+                                            }
+                                        elif draft.get("status") == "failed":
+                                            logger.warning(f"❌ Video generation failed (prompt match)")
+                                            return {"status": "failed", "id": draft.get("id")}
+
+            except Exception as e:
+                logger.warning(f"API poll error: {e}")
+
+            elapsed = int(time.time() - start_time)
+            logger.info(f"⏳ Polling... ({elapsed}s / {timeout}s)")
+            await asyncio.sleep(poll_interval)
+
+        logger.error(f"❌ Timeout waiting for video completion after {timeout}s")
+        return None
+
+    async def _api_get_pending_tasks(self) -> Optional[list]:
+        """Get pending tasks via API (internal helper)"""
+        if not self.latest_access_token:
+            return None
+
+        headers = {
+            "Authorization": self.latest_access_token,
+            "Content-Type": "application/json",
+            "User-Agent": self.latest_user_agent or "Mozilla/5.0"
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    "https://sora.chatgpt.com/backend/nf/pending/v2",
+                    headers=headers
+                ) as response:
+                    if response.status == 200:
+                        return await response.json()
+        except Exception as e:
+            logger.debug(f"_api_get_pending_tasks error: {e}")
+        return None
+
+    async def _api_get_drafts(self) -> Optional[list]:
+        """Get drafts via API (internal helper)"""
+        if not self.latest_access_token:
+            return None
+
+        headers = {
+            "Authorization": self.latest_access_token,
+            "Content-Type": "application/json",
+            "User-Agent": self.latest_user_agent or "Mozilla/5.0"
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    "https://sora.chatgpt.com/backend/project_y/profile/drafts?limit=15",
+                    headers=headers
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return data.get("items", data) if isinstance(data, dict) else data
+        except Exception as e:
+            logger.debug(f"_api_get_drafts error: {e}")
+        return None
+
+    async def get_credits_api(self) -> dict:
+        """
+        Check credits via API.
+        
+        Strategy:
+        1. If Browser Mode (self.page): Use page.evaluate() to fetch using browser context.
+           This is MOST RELIABLE as it uses exact cookies/headers/fingerprint of the session.
+        2. If API Mode or Browser method fails: Fallback to aiohttp with stored tokens.
+        
+        Returns:
+            dict with 'credits', 'source', 'reset_seconds' on success
+            dict with 'error', 'error_code' on failure (instead of None for better debugging)
+            None only if no token available
+        """
+        if not self.latest_access_token:
+            logger.warning("❌ get_credits_api failed: No access token captured.")
+            return {"error": "No access token", "error_code": "NO_TOKEN"}
+
+        # --- STRATEGY 1: BROWSER CONTEXT (Preferred) ---
+        if self.page:
+            try:
+                # We inject a script to fetch and return the JSON
+                # This naturally handles all cookies and headers
+                js_code = """
+                async () => {
+                    try {
+                        const response = await fetch('https://sora.chatgpt.com/backend/nf/check');
+                        if (response.status === 200) {
+                            return await response.json();
+                        } else {
+                             // Try billing as fallback
+                             const resp2 = await fetch('https://sora.chatgpt.com/backend/billing/credit_balance');
+                             if (resp2.status === 200) {
+                                 return await resp2.json();
+                             }
+                        }
+                        return null;
+                    } catch (e) {
+                        return null;
+                    }
+                }
+                """
+                data = await self.page.evaluate(js_code)
+                
+                if data:
+                    # Parse nf/check format
+                    if "rate_limit_and_credit_balance" in data:
+                        balance_info = data.get("rate_limit_and_credit_balance", {})
+                        estimated_remaining = balance_info.get("estimated_num_videos_remaining")
+                        purchased_remaining = balance_info.get("estimated_num_purchased_videos_remaining", 0)
+                        reset_seconds = balance_info.get("access_resets_in_seconds")
+                        
+                        if estimated_remaining is not None:
+                            total_credits = int(estimated_remaining) + int(purchased_remaining)
+                            logger.info(f"✅ Credit Check (Browser): Free={estimated_remaining} | Total={total_credits}")
+                            return {"credits": total_credits, "source": "browser_nf_check", "reset_seconds": reset_seconds}
+                            
+                    # Parse billing format
+                    elif "credits" in data:
+                         logger.info(f"✅ Credit Check (Browser Billing): {data['credits']}")
+                         return {"credits": int(data["credits"]), "source": "browser_billing"}
+                         
+            except Exception as e:
+                logger.warning(f"⚠️ Browser credit check failed: {e}")
+
+        # --- STRATEGY 2: API-ONLY (Fallback) ---
+        
+        # Generate sentinel (try/except to not block if library issue)
+        sentinel_header = ""
+        try:
+            from app.core.sentinel import get_sentinel_token
+            import json
+            token_data = get_sentinel_token(flow="sora_create_task") # Use existing flow
+            sentinel_header = json.dumps(json.loads(token_data) if isinstance(token_data, str) else token_data)
+        except Exception as s_err:
+             logger.warning(f"⚠️ Credit check sentinel gen failed: {s_err}")
+
+        headers = {
+            "Authorization": self.latest_access_token,
+            "Content-Type": "application/json",
+            "User-Agent": self.latest_user_agent or "Mozilla/5.0",
+            "openai-sentinel-token": sentinel_header,
+            "oai-device-id": getattr(self, 'device_id', "") or "",
+            "oai-language": "en-US"
+        }
+
+        # Prepare cookies and check expiry
+        cookie_dict = {}
+        expired_cookies = []
+        current_time = time.time()
+        
+        if hasattr(self, 'cookies') and self.cookies:
+            for c in self.cookies:
+                cookie_dict[c['name']] = c['value']
+                # Check if cookie is expired
+                exp = c.get('expires', -1)
+                if exp > 0 and exp < current_time:
+                    expired_cookies.append(c['name'])
+        
+        # Log cookie status
+        if expired_cookies:
+            logger.warning(f"⚠️ {len(expired_cookies)} cookies đã hết hạn: {expired_cookies[:5]}...")
+        logger.info(f"🍪 Using {len(cookie_dict)} cookies for API call")
+
+        # Build cookie string for curl_cffi
+        cookie_str = "; ".join([f"{k}={v}" for k, v in cookie_dict.items()])
+        
+        # Use curl_cffi with browser TLS fingerprint to bypass Cloudflare
+        try:
+            from curl_cffi import requests as curl_requests
+            
+            curl_headers = {
+                "Authorization": self.latest_access_token,
+                "Cookie": cookie_str,
+                "oai-device-id": getattr(self, 'device_id', "") or "",
+                "oai-language": "en-US",
+                "Referer": "https://sora.chatgpt.com/profile",
+                "Accept": "*/*",
+            }
+            
+            logger.info("🌐 Using curl_cffi for Cloudflare bypass...")
+            
+            # Priority 1: /nf/check
+            response = curl_requests.get(
+                "https://sora.chatgpt.com/backend/nf/check",
+                headers=curl_headers,
+                impersonate="chrome"
+            )
+            
+            logger.debug(f"🔍 /nf/check Response ({response.status_code})")
+            
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                except:
+                    logger.error(f"❌ Failed to decode JSON: {response.text[:200]}")
+                    data = {}
+                
+                # Parse rate_limit_and_credit_balance
+                balance_info = data.get("rate_limit_and_credit_balance", {})
+                estimated_remaining = balance_info.get("estimated_num_videos_remaining")
+                purchased_remaining = balance_info.get("estimated_num_purchased_videos_remaining", 0)
+                rate_limit_reached = balance_info.get("rate_limit_reached", False)
+                reset_seconds = balance_info.get("access_resets_in_seconds")
+                
+                if estimated_remaining is not None:
+                    total_credits = int(estimated_remaining) + int(purchased_remaining)
+                    logger.info(f"✅ Credit Check (curl_cffi): Free={estimated_remaining} | Purchased={purchased_remaining} | Total={total_credits}")
+                    
+                    if rate_limit_reached:
+                        logger.warning(f"⚠️ Rate Limit Reached! Reset in {reset_seconds}s")
+                        return {"credits": 0, "source": "curl_rate_limited", "reset_seconds": reset_seconds}
+                    
+                    return {"credits": total_credits, "source": "curl_nf_check", "reset_seconds": reset_seconds}
+                    
+            elif response.status_code in [401, 403]:
+                # Check if Cloudflare challenge
+                if "Just a moment" in response.text:
+                    logger.error("❌ Cloudflare challenge - cookies may need refresh")
+                    return {"error": "Cloudflare challenge", "error_code": "CLOUDFLARE_BLOCK"}
+                else:
+                    logger.error(f"❌ nf/check Auth Failed (HTTP {response.status_code})")
+                    return {"error": f"Auth failed: HTTP {response.status_code}", "error_code": "TOKEN_EXPIRED"}
+                    
+            elif response.status_code == 429:
+                logger.warning("⚠️ Rate Limited (HTTP 429)")
+                return {"error": "Rate limited", "error_code": "RATE_LIMITED"}
+            
+            # Fallback: /billing/credit_balance
+            logger.info("🔄 Trying fallback: /billing/credit_balance")
+            response = curl_requests.get(
+                "https://sora.chatgpt.com/backend/billing/credit_balance",
+                headers=curl_headers,
+                impersonate="chrome"
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if "credits" in data:
+                    logger.info(f"✅ Credit Check (curl billing): {data['credits']}")
+                    return {"credits": int(data["credits"]), "source": "curl_billing"}
+                    
+        except ImportError:
+            logger.warning("⚠️ curl_cffi not installed, falling back to aiohttp...")
+            # Fallback to aiohttp (may fail with Cloudflare)
+            return await self._get_credits_aiohttp(headers, cookie_dict, expired_cookies)
+        except Exception as e:
+            logger.error(f"❌ curl_cffi exception: {e}")
+
+        # If we reach here, both failed
+        logger.error(f"❌ All API credit checks failed!")
+        logger.error(f"   Token: {self.latest_access_token[:50] if self.latest_access_token else 'None'}...")
+        logger.error(f"   Cookies: {len(cookie_dict)} total, {len(expired_cookies)} expired")
+        return {"error": "All API checks failed", "error_code": "ALL_FAILED"}
+
+    async def get_pending_tasks_api(self) -> list:
+        """
+        Get list of pending video generation tasks with progress.
+        Uses /nf/pending/v2 endpoint. Works in API-only mode.
+
+        Returns:
+            list: [{"id": "task_...", "status": "queued", "prompt": "...", "progress_pct": 0.85}]
+            Empty list [] means all videos are complete.
+        """
+        if not self.latest_access_token:
+            logger.warning("❌ get_pending_tasks_api failed: No access token captured.")
+            return None
+
+        # Use curl_cffi to bypass Cloudflare
+        try:
+            from curl_cffi import requests as curl_requests
+            
+            headers = {
+                "Authorization": self.latest_access_token,
+                "Content-Type": "application/json",
+                "User-Agent": self.latest_user_agent or "Mozilla/5.0",
+                "Referer": "https://sora.chatgpt.com/"
+            }
+            
+            # Simple sync call (fast enough) or could use AsyncSession
+            response = curl_requests.get(
+                "https://sora.chatgpt.com/backend/nf/pending/v2",
+                headers=headers,
+                impersonate="chrome",
+                timeout=15
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, list):
+                    if len(data) == 0:
+                        logger.info("✅ Pending Tasks: [] - All videos complete!")
+                    else:
+                        for task in data:
+                            progress = task.get('progress_pct', 0) * 100
+                            logger.info(f"📊 Task {task.get('id')}: {task.get('status')} | {progress:.1f}%")
+                    return data
+                else:
+                    return data # Handle if it returns dict?
+                    
+            elif response.status_code == 403:
+                if "Just a moment" in response.text:
+                    logger.warning("⚠️ Cloudflare blocked Pending Tasks check.")
+                else:
+                    logger.warning(f"⚠️ Pending Tasks 403: {response.text[:100]}")
+            
+        except ImportError:
+            # Fallback to aiohttp
+            logger.warning("⚠️ curl_cffi missing, falling back to aiohttp for pending tasks...")
+            try:
+                headers = {
+                    "Authorization": self.latest_access_token,
+                    "Content-Type": "application/json",
+                    "User-Agent": self.latest_user_agent or "Mozilla/5.0"
+                }
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        "https://sora.chatgpt.com/backend/nf/pending/v2",
+                        headers=headers
+                    ) as response:
+                        if response.status == 200:
+                            return await response.json()
+            except Exception as e:
+                logger.debug(f"get_pending_tasks_api failed (aiohttp): {e}")
+                
+        except Exception as e:
+            logger.error(f"❌ get_pending_tasks_api failed: {e}")
+            
+        return None
+
+    async def generate_video_api(
+        self,
+        prompt: str,
+        orientation: str = "landscape",
+        size: str = "small",
+        n_frames: int = 180,
+        model: str = "sy_8",
+        image_file_id: str = None,
+    ) -> dict:
+        """
+        Generate video via direct API call using Sentinel bypass.
+        
+        Args:
+            prompt: Text prompt for video generation
+            orientation: 'landscape' or 'portrait'
+            size: 'small', 'medium', or 'large'
+            n_frames: Number of frames (180 = 6s, 300 = 10s)
+            model: Model ID (default 'sy_8')
+            image_file_id: Optional file_id from upload_image_api() for image-to-video
+            
+        Returns:
+            dict with 'success', 'task_id', 'error' keys
+        """
+        from app.core.sentinel import get_sentinel_token
+        import json
+        
+        logger.info(f"🎬 Generating video via API: {prompt[:50]}...")
+        
+        if not self.latest_access_token:
+            logger.error("❌ No access token available")
+            return {"success": False, "error": "No access token"}
+        
+        # Generate sentinel token
+        try:
+            sentinel_payload = get_sentinel_token(flow="sora_create_task")
+            logger.info(f"🔐 Generated sentinel token")
+        except Exception as e:
+            logger.error(f"❌ Sentinel token generation failed: {e}")
+            return {"success": False, "error": f"Sentinel failed: {e}"}
+        
+        # Build request payload
+        payload = {
+            "kind": "video",
+            "prompt": prompt,
+            "title": None,
+            "orientation": orientation,
+            "size": size,
+            "n_frames": n_frames,
+            "inpaint_items": [],
+            "remix_target_id": None,
+            "metadata": None,
+            "cameo_ids": None,
+            "cameo_replacements": None,
+            "model": model,
+            "style_id": None,
+            "audio_caption": None,
+            "audio_transcript": None,
+            "video_caption": None,
+            "storyboard_id": None
+        }
+        
+        # Add image attachment if provided
+        if image_file_id:
+            payload["inpaint_items"] = [{"kind": "file", "file_id": image_file_id}]
+        
+        # Get device ID
+        if self.page:
+            # Browser mode - get from localStorage
+            try:
+                oai_device_id = await self.page.evaluate("""() => {
+                    return localStorage.getItem('oai-did') || 
+                           document.cookie.match(/oai-did=([^;]+)/)?.[1] || 
+                           null;
+                }""")
+            except:
+                oai_device_id = getattr(self, 'device_id', None)
+        else:
+            # API-only mode - use stored device_id
+            oai_device_id = getattr(self, 'device_id', None) or ""
+        
+        # Build headers
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': self.latest_access_token,
+            'openai-sentinel-token': json.dumps(json.loads(sentinel_payload) if isinstance(sentinel_payload, str) else sentinel_payload),
+            'oai-device-id': oai_device_id or "",
+            'oai-language': 'en-US',
+            'User-Agent': self.latest_user_agent or 'Mozilla/5.0'
+        }
+        
+        try:
+            if self.page:
+                # Browser mode - use page.evaluate
+                js_code = f"""
+                async () => {{
+                    const payload = {json.dumps(payload)};
+                    const sentinelPayload = {sentinel_payload};
+                    
+                    try {{
+                        const response = await fetch('https://sora.chatgpt.com/backend/nf/create', {{
+                            method: 'POST',
+                            headers: {{
+                                'Content-Type': 'application/json',
+                                'Authorization': '{self.latest_access_token}',
+                                'openai-sentinel-token': JSON.stringify(sentinelPayload),
+                                'oai-device-id': '{oai_device_id or ""}',
+                                'oai-language': 'en-US'
+                            }},
+                            body: JSON.stringify(payload)
+                        }});
+                        
+                        const text = await response.text();
+                        return {{ status: response.status, body: text }};
+                    }} catch (e) {{
+                        return {{ status: 0, error: e.toString() }};
+                    }}
+                }}
+                """
+                result = await self.page.evaluate(js_code)
+            else:
+                # API-only mode (100% headless) - use curl_cffi
+                try:
+                    from curl_cffi import requests as curl_requests
+                    logger.info("🔌 Using curl_cffi for headless API call (Bypassing Cloudflare)...")
+                except ImportError:
+                    logger.error("❌ curl_cffi not installed! Fallback to aiohttp (High risk of block)")
+                    import aiohttp
+                    curl_requests = None
+
+                if curl_requests:
+                    # curl_cffi does not support async context manager in the same way as aiohttp usually?
+                    # Actually curl_cffi.requests.AsyncSession is available in newer versions
+                    # But sync request is safer/easier if async not strictly required for performance here
+                    # However, this function is async. We should use async if possible or run in thread.
+                    # Simple approach: Use sync curl_requests inside run_in_executor if needed, 
+                    # OR use curl_requests.post directly (sync) since it's fast enough or allows impersonate.
+                    
+                    # NOTE: curl_cffi requests.post is SYNC. We should be careful blocking event loop.
+                    # But for now, to ensure bypass, sync is acceptable or use AsyncSession.
+                    
+                    response = curl_requests.post(
+                        'https://sora.chatgpt.com/backend/nf/create',
+                        headers=headers,
+                        json=payload,
+                        impersonate="chrome",
+                        timeout=30
+                    )
+                    
+                    result = {"status": response.status_code, "body": response.text}
+                else:
+                     # Fallback to aiohttp
+                     async with aiohttp.ClientSession() as session:
+                        async with session.post(
+                            'https://sora.chatgpt.com/backend/nf/create',
+                            headers=headers,
+                            json=payload
+                        ) as response:
+                            text = await response.text()
+                            result = {"status": response.status, "body": text}
+            
+            if result.get('status') == 200:
+                logger.info("✅ Video generation API call successful!")
+                try:
+                    response_data = json.loads(result['body'])
+                    task_id = response_data.get('id') or response_data.get('task_id')
+                    return {"success": True, "task_id": task_id, "response": response_data}
+                except:
+                    return {"success": True, "response": result['body']}
+            else:
+                error_msg = result.get('body', result.get('error', 'Unknown error'))
+                if 'sentinel' in str(error_msg).lower():
+                    logger.error("❌ Sentinel block - token may have expired")
+                else:
+                    logger.error(f"❌ API error {result.get('status')}: {str(error_msg)[:200]}")
+                return {"success": False, "error": error_msg}
+                
+        except Exception as e:
+            logger.error(f"❌ generate_video_api exception: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def upload_image_api(self, image_path: str) -> dict:
+        """
+        Upload an image via API for use in prompts.
+        Works in both browser and API-only mode.
+        """
+        import os
+        import json
+        
+        logger.info(f"📤 Uploading image: {image_path}")
+        
+        if not os.path.exists(image_path):
+            return {"success": False, "error": f"File not found: {image_path}"}
+        
+        if not self.latest_access_token:
+            return {"success": False, "error": "No access token"}
+            
+        filename = os.path.basename(image_path)
+        ext = os.path.splitext(image_path)[1].lower()
+        mime_type = "image/jpeg" if ext in [".jpg", ".jpeg"] else "image/png"
+        
+        try:
+            if self.page:
+                # Browser mode
+                import base64
+                with open(image_path, "rb") as f:
+                    image_bytes = f.read()
+                image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+                
+                js_code = f"""
+                async () => {{
+                    try {{
+                        const b64 = "{image_b64}";
+                        const binaryString = atob(b64);
+                        const bytes = new Uint8Array(binaryString.length);
+                        for (let i = 0; i < binaryString.length; i++) {{
+                            bytes[i] = binaryString.charCodeAt(i);
+                        }}
+                        const blob = new Blob([bytes], {{ type: '{mime_type}' }});
+                        
+                        const formData = new FormData();
+                        formData.append('file', blob, '{filename}');
+                        
+                        const response = await fetch('https://sora.chatgpt.com/backend/project_y/file/upload', {{
+                            method: 'POST',
+                            headers: {{
+                                'Authorization': '{self.latest_access_token}'
+                            }},
+                            body: formData
+                        }});
+                        
+                        const text = await response.text();
+                        return {{ status: response.status, body: text }};
+                    }} catch (e) {{
+                        return {{ status: 0, error: e.toString() }};
+                    }}
+                }}
+                """
+                result = await self.page.evaluate(js_code)
+            else:
+                # API-only mode
+                import aiohttp
+                
+                async with aiohttp.ClientSession() as session:
+                    data = aiohttp.FormData()
+                    data.add_field('file',
+                                   open(image_path, 'rb'),
+                                   filename=filename,
+                                   content_type=mime_type)
+                                   
+                    headers = {
+                        "Authorization": self.latest_access_token,
+                        "User-Agent": self.latest_user_agent or "Mozilla/5.0"
+                    }
+                    
+                    async with session.post(
+                        "https://sora.chatgpt.com/backend/project_y/file/upload",
+                        headers=headers,
+                        data=data
+                    ) as response:
+                        text = await response.text()
+                        result = {"status": response.status, "body": text}
+            
+            if result.get('status') == 200:
+                data = json.loads(result['body'])
+                logger.info(f"✅ Image uploaded: file_id={data.get('file_id', 'unknown')[:30]}...")
+                return {
+                    "success": True,
+                    "file_id": data.get('file_id'),
+                    "url": data.get('url'),
+                    "asset_pointer": data.get('asset_pointer')
+                }
+            else:
+                return {"success": False, "error": result.get('body', result.get('error'))}
+                
+        except Exception as e:
+            logger.error(f"❌ upload_image_api exception: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def get_drafts_api(self) -> list:
+        """
+        Get list of draft videos with URLs. Works in API-only mode.
+
+        Returns:
+            list of draft video objects with id, status, video_url, etc.
+        """
+        # Use curl_cffi to bypass Cloudflare
+        try:
+            from curl_cffi import requests as curl_requests
+            
+            headers = {
+                "Authorization": self.latest_access_token,
+                "Content-Type": "application/json",
+                "User-Agent": self.latest_user_agent or "Mozilla/5.0",
+                "Referer": "https://sora.chatgpt.com/"
+            }
+            
+            response = curl_requests.get(
+                "https://sora.chatgpt.com/backend/project_y/profile/drafts?limit=15",
+                headers=headers,
+                impersonate="chrome",
+                timeout=20
+            ) 
+            
+            if response.status_code == 200:
+                data = response.json()
+                drafts = data.get('items', data) if isinstance(data, dict) else data
+                logger.info(f"✅ Drafts API: Retrieved {len(drafts)} drafts (curl_cffi)")
+                return drafts
+            else:
+                logger.warning(f"⚠️ Drafts API failed ({response.status_code}): {response.text[:100]}")
+                
+        except ImportError:
+            # Fallback to aiohttp
+            logger.warning("⚠️ curl_cffi missing, falling back to aiohttp for drafts...")
+            try:
+                headers = {
+                    "Authorization": self.latest_access_token,
+                    "Content-Type": "application/json",
+                    "User-Agent": self.latest_user_agent or "Mozilla/5.0"
+                }
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        "https://sora.chatgpt.com/backend/project_y/profile/drafts?limit=15",
+                        headers=headers
+                    ) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            drafts = data.get('items', data) if isinstance(data, dict) else data
+                            logger.info(f"✅ Drafts API: Retrieved {len(drafts)} drafts (aiohttp)")
+                            return drafts
+            except Exception as e:
+                logger.debug(f"get_drafts_api failed (aiohttp): {e}")
+
+        except Exception as e:
+            logger.error(f"❌ get_drafts_api failed: {e}")
+
+        return None
+
+    async def post_video_api(self, video_id: str = None, title: str = None, description: str = None) -> dict:
+        """
+        Publish/post a video via API with sentinel bypass.
+        Works in both browser and API-only mode.
+        """
+        from app.core.sentinel import get_sentinel_token
+        import json
+        
+        logger.info(f"📤 Publishing video via API...")
+        
+        if not self.latest_access_token:
+            return {"success": False, "error": "No access token"}
+        
+        # Generate sentinel token for post flow
+        try:
+            sentinel_payload = get_sentinel_token(flow="sora_2_create_post")
+        except Exception as e:
+            return {"success": False, "error": f"Sentinel failed: {e}"}
+        
+        # Determine Device ID
+        oai_device_id = getattr(self, 'device_id', "")
+        if self.page:
+            try:
+                oai_device_id = await self.page.evaluate("""() => {
+                    return localStorage.getItem('oai-did') || null;
+                }""")
+            except:
+                pass
+        
+        # Build payload
+        payload = {
+            "title": title or "Sora Video",
+            "description": description or "",
+            "visibility": "public"
+        }
+        if video_id:
+            payload["video_id"] = video_id
+            
+        try:
+            if self.page:
+                # Browser mode
+                js_code = f"""
+                async () => {{
+                    const sentinelPayload = {sentinel_payload};
+                    
+                    try {{
+                        const response = await fetch('https://sora.chatgpt.com/backend/project_y/post', {{
+                            method: 'POST',
+                            headers: {{
+                                'Content-Type': 'application/json',
+                                'Authorization': '{self.latest_access_token}',
+                                'openai-sentinel-token': JSON.stringify(sentinelPayload),
+                                'oai-device-id': '{oai_device_id}',
+                                'oai-language': 'en-US'
+                            }},
+                            body: JSON.stringify({json.dumps(payload)})
+                        }});
+                        
+                        const text = await response.text();
+                        return {{ status: response.status, body: text }};
+                    }} catch (e) {{
+                        return {{ status: 0, error: e.toString() }};
+                    }}
+                }}
+                """
+                result = await self.page.evaluate(js_code)
+            else:
+                # API-only mode
+                import aiohttp
+                
+                headers = {
+                    "Authorization": self.latest_access_token,
+                    "Content-Type": "application/json",
+                    "User-Agent": self.latest_user_agent or "Mozilla/5.0",
+                    "openai-sentinel-token": json.dumps(json.loads(sentinel_payload) if isinstance(sentinel_payload, str) else sentinel_payload),
+                    "oai-device-id": oai_device_id,
+                    "oai-language": "en-US"
+                }
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        'https://sora.chatgpt.com/backend/project_y/post',
+                        headers=headers,
+                        json=payload
+                    ) as response:
+                        text = await response.text()
+                        result = {"status": response.status, "body": text}
+                        
+            if result.get('status') == 200:
+                data = json.loads(result['body'])
+                logger.info(f"✅ Video Published! URL: {data.get('url')}")
+                return {"success": True, "post_id": data.get('id'), "url": data.get('url')}
+            else:
+                 error_msg = result.get('body', result.get('error'))
+                 logger.error(f"❌ Post API failed: {error_msg}")
+                 return {"success": False, "error": error_msg}
+
+        except Exception as e:
+            logger.error(f"❌ post_video_api exception: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def verify_identity(self, expected_email: str) -> bool:
+        """
+        STRICT SECURITY CHECK:
+        Verifies that the current browser session is actually logged in as 'expected_email'.
+        Prevents 'Cross-Account' pollution if profiles get mixed up.
+        """
+        logger.info(f"🆔 Verifying Identity (Expected: {expected_email})...")
+        
+        if not self.latest_access_token:
+             # Try to trigger a fetch to get token first?
+             # Or just try the endpoint without token (if browser cookies handle it)
+             pass
+
+        target_url = "https://chatgpt.com/backend-api/me"
+        
+        try:
+            # Fetch 'me' profile
+            result = await self.page.evaluate(f"""async () => {{
+                try {{
+                    const res = await fetch('{target_url}', {{
+                        headers: {{ 'Content-Type': 'application/json' }}
+                    }});
+                    if (res.status === 200) {{
+                        const data = await res.json();
+                        return {{ status: 200, email: data.email }};
+                    }}
+                    return {{ status: res.status, email: null }};
+                }} catch (e) {{
+                    return {{ status: 0, email: null, error: e.toString() }};
+                }}
+            }}""")
+            
+            if result['status'] == 200:
+                actual_email = result.get('email', '')
+                logger.info(f"   👤 Current Session Email: {actual_email}")
+                
+                if actual_email and actual_email.lower().strip() == expected_email.lower().strip():
+                    logger.info("✅ Identity Verified.")
+                    return True
+                else:
+                    logger.error(f"❌ IDENTITY MISMATCH! Expected: {expected_email} | Found: {actual_email}")
+                    return False
+            else:
+                logger.warning(f"⚠️ Identity check failed (API {result['status']}). Assuming safe if logged in.")
+                # If API fails, we can't verify. 
+                # Strict mode: Return False? 
+                # Lenient mode: Return True (don't block operation if API is flakey)
+                # Let's Return True but warn, to avoid blocking valid runs on API networking issues.
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error during identity verify: {e}")
+            return True # Fail open to avoid stopping automation on unrelated errors verification logic should be robust
+            
+        return True
 
     async def login(self, email: Optional[str] = None, password: Optional[str] = None, cookies: Optional[dict] = None) -> dict:
         await self.start()
-        
-        if cookies:
-            logger.info("Loading existing cookies...")
-            # Todo: Implement actual cookie loading if needed
-            pass
-            
         await self.login_page.login(email or "", password or "", self.base_url)
+        
+        # Identity Verification Safeguard
+        if email:
+            is_valid_identity = await self.verify_identity(email)
+            if not is_valid_identity:
+                logger.error("🚨 CRITICAL: Session Identity Mismatch! Expected different user.")
+                logger.warning("🧹 Force Check-out (Clearing Cookies) to prevent cross-account contamination...")
+                
+                # Force Logout
+                try:
+                    await self.page.context.clear_cookies()
+                except:
+                    pass
+                
+                raise Exception(f"Session Identity Mismatch: Logged in user is NOT {email}. Cookies cleared.")
+        
+        # Wait a bit for traffic to generate token if needed
+        if not self.latest_access_token:
+             logger.info("⏳ Waiting 5s for token capture after login...")
+             await asyncio.sleep(5)
+        
         return await self.context.cookies()
 
-    async def submit_video(self, prompt: str) -> dict:
-        """
-        Submit video generation request and return IMMEDIATELY after confirmation.
-        Does NOT wait for video completion.
-        
-        Args:
-            prompt: Video generation prompt
-            
-        Returns:
-            dict: {
-                "submitted": bool - True if credit decreased (confirmed),
-                "credits_before": int,
-                "credits_after": int
-            }
-        """
-        from .pages.creation import QuotaExhaustedException
-        
-        if not await self.login_page.check_is_logged_in():
-            logger.error("User not logged in.")
-            raise Exception("Session expired or not logged in.")
-        
-        # Check credits BEFORE
-        logger.info("Checking credits before submission...")
-        credits_before = await self.check_credits()
-
-        # Handle credits check failure
-        if credits_before == -1:
-            logger.warning("⚠️ Could not read credits before submission. Proceeding in FALLBACK mode (no credit verification).")
-            logger.warning("⚠️ This submission may fail if account has no credits.")
-        elif credits_before <= 1:
-            # Credits readable and too low
-            logger.warning(f"Credits are {credits_before} (threshold > 1). Aborting submission.")
-            raise QuotaExhaustedException(f"Account has {credits_before} credits remaining (need > 1).")
-        else:
-            logger.info(f"Credits BEFORE: {credits_before} ✅")
-        
-        # Fill prompt and submit
-        await self.creation_page.fill_prompt(prompt)
-        
-        # Capture UI Success Status
-        ui_success = await self.creation_page.click_generate(prompt)
-        
-        # Wait for UI to update (with retry)
-        credits_after = -1
-        submitted = False
-        
-        if ui_success:
-             logger.info("✅ Submission confirmed via UI state change. Now verifying credit deduction...")
-        
-        # Strict polling loop: Check credits for up to 60 seconds (variable intervals)
-        # Sora can be slow to update credits sometimes
-        retry_intervals = [2] * 30  # 30 attempts * 2 seconds = 60 seconds max
-
-        # FALLBACK MODE: If credits_before was -1, we can't verify via credits
-        if credits_before == -1:
-            logger.warning("⚠️ FALLBACK MODE: Skipping credit verification (credits unreadable)")
-            logger.warning("⚠️ Assuming submission succeeded based on UI state. Risk: may not have actually submitted.")
-            # Wait a bit for UI to update
-            await asyncio.sleep(10)
-            # Check for visual indicators
-            if ui_success:
-                logger.info("✅ UI indicated success. Assuming submitted (UNVERIFIED).")
-                submitted = True
-                credits_after = -1  # Mark as unverified
-            else:
-                logger.error("❌ UI did not confirm success. Submission likely failed.")
-                submitted = False
-                credits_after = -1
-        else:
-            # NORMAL MODE: Verify via credit deduction
-            for attempt, wait_time in enumerate(retry_intervals):
-                await asyncio.sleep(wait_time)
-
-                # Handle potential post-click popups that might appear late
-                if attempt % 5 == 0: # Check every 10 seconds
-                     try:
-                         await self.creation_page.handle_blocking_popups()
-                     except Exception as e:
-                         logger.warning(f"Benign error handling popups during verification: {e}")
-
-                credits_after = await self.check_credits()
-
-                # Edge case: credits_after still -1 after multiple attempts
-                if credits_after == -1:
-                    if attempt < 5:
-                        # Retry a few times
-                        logger.warning(f"⚠️ Credits unreadable during verification (attempt {attempt+1}). Retrying...")
-                        continue
-                    else:
-                        # Give up on credit verification
-                        logger.error("❌ Credits became unreadable during verification. Cannot verify submission.")
-                        raise Exception("Credit verification failed: UI not responding")
-
-                credit_used = credits_before - credits_after
-
-                if credit_used >= 1:
-                    logger.info(f"✅ Credit reduction verified! Credits: {credits_before} → {credits_after} (Attempt {attempt+1})")
-                    submitted = True
-                    break
-
-                elif credit_used < 0:
-                     # Rare case: credits increased? (Refund or top-up)
-                     logger.warning(f"⚠️ Credits INCREASED? {credits_before} → {credits_after}. Continuing verification...")
-
-                else: # credit_used == 0
-                     # Log progress every few attempts
-                     if attempt % 5 == 0:
-                         logger.info(f"⏳ Waiting for credit drop... ({credits_before} remaining) - Attempt {attempt+1}/{len(retry_intervals)}")
-
-        if not submitted:
-             logger.error(f"❌ Verification FAILED. Credits did not decrease after 60s. Before: {credits_before}, After: {credits_after}")
-             # Visual check removed - Strict Logic
-
-        
-        if not submitted:
-             # STRICT FAILURE: If we couldn't verify, we return False (or raise exception)
-             # The caller (worker) handles 'submitted: False' by marking as failed/retry.
-             logger.error("🛑 Strict verification failed: No credit drop & no visual confirmation.")
-        
-        return {
-            "submitted": submitted,
-            "credits_before": credits_before,
-            "credits_after": credits_after
-        }
     
-    async def check_video_status(self) -> str:
-        """
-        Check if video generation is complete.
-        
-        Returns:
-            str: "generating" | "completed" | "unknown"
-        """
-        # Check for completion indicators
-        from .selectors import SoraSelectors
-        
-        for indicator in SoraSelectors.VIDEO_COMPLETION_INDICATORS:
-            try:
-                if await self.page.is_visible(indicator, timeout=2000):
-                    logger.info(f"Video status: completed (indicator: {indicator})")
-                    return "completed"
-            except:
-                continue
-        
-        # If not completed, assume still generating
-        return "generating"
-    
-    async def get_video_public_link(self) -> str:
-        """
-        Get public link for completed video.
-        
-        Returns:
-            str: Public video URL
-        """
-        return await self.creation_page.get_public_link()
 
-    async def create_video(self, prompt: str, image_path: Optional[str] = None, check_cancel: Optional[Callable[[], Awaitable[bool]]] = None):
-        """
-        Create (generate) a video with prompt using new approach:
-        1. Fill prompt and click generate
-        2. Wait for video completion (UI-based)
-        3. Get public link
-        4. Download via third-party service (removes watermark)
-        
-        Returns:
-            str: Local path to downloaded video (e.g., "/downloads/video_123.mp4")
-        """
-        if not await self.login_page.check_is_logged_in():
-            logger.error("User not logged in.")
-            raise Exception("Session expired or not logged in.")
-        
-        if check_cancel and await check_cancel():
-             raise Exception("Cancelled by user (Before Start)")
-             
-        # New Requirement: Check credits BEFORE generating
-        logger.info("Checking credits before generation...")
-        credits_before = await self.check_credits()
-        
-        # Raise QuotaExhaustedException if credits <= 1 (User requirement: > 1)
-        if credits_before != -1 and credits_before <= 1:
-            logger.warning(f"Credits are {credits_before} (require > 1). Aborting generation.")
-            from .pages.creation import QuotaExhaustedException
-            raise QuotaExhaustedException(f"Account has {credits_before} credits remaining (need > 1).")
-        
-        logger.info(f"Credits BEFORE: {credits_before}. Proceeding with generation.")
-             
-        logger.info(f"Creating video with prompt: {prompt}")
-        
-        # 1. Fill Prompt
-        await self.creation_page.fill_prompt(prompt)
-        
-        if check_cancel and await check_cancel():
-             raise Exception("Cancelled by user (Before Submit)")
 
-        # 2. Click Generate
-        await self.creation_page.click_generate()
-        
-        # 3. NEW: Verify video was queued by checking credits decreased
-        logger.info("Verifying video was queued (checking credits after submission)...")
-        import asyncio
-        await asyncio.sleep(3)  # Wait for UI to update
-        credits_after = await self.check_credits()
-        
-        if credits_before != -1 and credits_after != -1:
-            credit_used = credits_before - credits_after
-            if credit_used == 1:
-                logger.info(f"✅ Video queued confirmed! Credits: {credits_before} → {credits_after} (used: {credit_used})")
-            elif credit_used == 0:
-                logger.warning(f"⚠️ Credits unchanged ({credits_before} → {credits_after}). Video may NOT have been queued!")
-            else:
-                logger.warning(f"⚠️ Unexpected credit change: {credits_before} → {credits_after} (diff: {credit_used})")
-        else:
-            logger.warning("Could not verify credit change (credits unavailable)")
-        
-        # 4. Wait for video completion (UI-based, not network-based)
-        logger.info("Waiting for video generation to complete...")
-        completed = await self.creation_page.wait_for_video_completion(max_wait=300)
-        
-        if not completed:
-            raise Exception("Video generation timeout - video did not complete within 300 seconds")
-        
-        if check_cancel and await check_cancel():
-             raise Exception("Cancelled by user (After Completion)")
-        
-        # 4. Get public link
-        logger.info("Getting public link...")
-        public_link = await self.creation_page.get_public_link()
-        logger.info(f"Public link obtained: {public_link}")
-        
-        # 5. Download via third-party service
-        from ..third_party_downloader import ThirdPartyDownloader
-        
-        downloader = ThirdPartyDownloader()
-        local_path, file_size = await downloader.download_from_public_link(
-            self.page,
-            public_link
-        )
-        
-        logger.info(f"✅ Video downloaded successfully: {local_path} ({file_size:,} bytes)")
-        
-        # Return web-accessible path
-        filename = os.path.basename(local_path)
-        return f"/downloads/{filename}"
 

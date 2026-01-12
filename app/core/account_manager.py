@@ -6,12 +6,49 @@ from typing import Optional, Set
 from datetime import datetime, timedelta
 import logging
 import asyncio
+import time
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
 # Track accounts currently being used by workers (in-memory)
 _busy_accounts: Set[int] = set()
 _busy_accounts_lock: Optional[asyncio.Lock] = None
+
+# Track actual asyncio locks for profile directory access
+# Key: account_id, Value: asyncio.Lock
+_account_file_locks: dict[int, asyncio.Lock] = {}
+# Track actual asyncio locks for profile directory access
+# Key: account_id, Value: asyncio.Lock
+_account_file_locks: dict[int, asyncio.Lock] = {}
+_account_file_locks_mutex = asyncio.Lock()
+
+# Rate limiting tracking
+SUBMIT_RATE_LIMIT_SECONDS = 30
+_account_submit_times: dict[int, float] = {}  # account_id -> timestamp
+
+def get_cooldown_remaining(account_id: int) -> float:
+    """Get remaining cooldown seconds for an account"""
+    last = _account_submit_times.get(account_id, 0)
+    elapsed = time.time() - last
+    return max(0.0, SUBMIT_RATE_LIMIT_SECONDS - elapsed)
+
+def record_submit_time(account_id: int):
+    """Record a submit event for rate limiting"""
+    _account_submit_times[account_id] = time.time()
+    logger.debug(f"Recorded submit time for Account #{account_id}")
+
+def is_account_ready(account_id: int) -> bool:
+    """Check if account is ready for submit (rate limit check)"""
+    return get_cooldown_remaining(account_id) <= 0
+
+async def get_account_lock(account_id: int) -> asyncio.Lock:
+    """Get or create an execution lock for a specific account (prevents chrome profile conflicts)"""
+    async with _account_file_locks_mutex:
+        if account_id not in _account_file_locks:
+            _account_file_locks[account_id] = asyncio.Lock()
+        return _account_file_locks[account_id]
+
 
 def _get_lock():
     """Lazy-init lock to avoid event loop issues"""
@@ -28,7 +65,7 @@ def get_available_account(db: Session, platform: str, exclude_ids: list[int] = N
     """
     query = db.query(models.Account).filter(
         models.Account.platform == platform,
-        models.Account.status == "live"  # Only 'live' accounts, not 'quota_exhausted', 'die', etc.
+        models.Account.status != "die"  # Relaxed check: Allow retry of auth_failed/cooldown/etc.
     )
 
     if exclude_ids:
@@ -39,6 +76,10 @@ def get_available_account(db: Session, platform: str, exclude_ids: list[int] = N
         query = query.filter(models.Account.id.notin_(list(_busy_accounts)))
 
     accounts = query.all()
+
+    # Filter by Rate Limit (30s cooldown)
+    # Only pick accounts that are ready NOW
+    accounts = [acc for acc in accounts if is_account_ready(acc.id)]
 
     if not accounts:
         return None
@@ -97,8 +138,35 @@ def reset_quota_exhausted_accounts(db: Session, hours: int = 24):
         logger.info(f"Reset {updated} quota_exhausted/cooldown accounts back to live")
     return updated
 
+    if updated > 0:
+        logger.info(f"Reset {updated} quota_exhausted/cooldown accounts back to live")
+    return updated
 
-def get_available_account_count(db: Session, platform: str) -> int:
+
+def has_usable_account(db: Session, platform: str, specific_account_id: int = None) -> bool:
+    """
+    Check if there is at least one usable account:
+    1. Status NOT IN [die, quota_exhausted, checkpoint]
+    2. Credits_Remaining > 0 (if tracked, i.e. not None)
+    """
+    query = db.query(models.Account).filter(models.Account.platform == platform)
+    
+    # Define unusable statuses
+    unusable = ["die", "quota_exhausted", "checkpoint", "verification_needed"]
+    query = query.filter(models.Account.status.notin_(unusable))
+
+    # Also check numeric credits if available
+    # Allow if credits_remaining is None (not checked yet) OR credits_remaining > 0
+    from sqlalchemy import or_
+    query = query.filter(or_(
+        models.Account.credits_remaining == None,
+        models.Account.credits_remaining > 0
+    ))
+    
+    if specific_account_id:
+        query = query.filter(models.Account.id == specific_account_id)
+
+    return query.count() > 0
     """Get count of available accounts"""
     count = db.query(func.count(models.Account.id)).filter(
         models.Account.platform == platform,
@@ -112,3 +180,14 @@ def get_available_account_count(db: Session, platform: str) -> int:
 def get_busy_account_ids() -> Set[int]:
     """Get the set of currently busy account IDs"""
     return _busy_accounts.copy()
+
+
+def force_reset():
+    """Force clear all busy states and locks (Emergency use)"""
+    global _busy_accounts, _account_file_locks
+    logger.warning(f"⚠️ FORCE RESET: Clearing {_busy_accounts} from busy list.")
+    _busy_accounts.clear()
+    
+    # Also clear lock instances to prevent deadlock if old worker is stuck holding one
+    logger.warning(f"⚠️ FORCE RESET: Clearing {len(_account_file_locks)} account locks.")
+    _account_file_locks.clear()

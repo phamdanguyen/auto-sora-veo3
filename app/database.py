@@ -44,10 +44,29 @@ def migrate_if_needed():
             cursor.execute("ALTER TABLE jobs ADD COLUMN task_state TEXT")
             conn.commit()
             logger.info("✅ Column 'task_state' added successfully")
-        else:
-            logger.debug("Column 'task_state' already exists")
+        
+        if 'login_mode' not in columns:
+            logger.info("Adding 'login_mode' column to jobs table...")
+            cursor.execute("ALTER TABLE jobs ADD COLUMN login_mode TEXT DEFAULT 'auto'")
+            conn.commit()
+            logger.info("✅ Column 'login_mode' added successfully")
 
-        # Check and add accounts columns (credits)
+        if 'video_id' not in columns:
+             logger.info("Adding 'video_id' column to jobs table...")
+             cursor.execute("ALTER TABLE jobs ADD COLUMN video_id TEXT")
+             conn.commit()
+             logger.info("✅ Column 'video_id' added successfully")
+             
+        if 'progress' not in columns:
+             logger.info("Adding 'progress' column to jobs table...")
+             cursor.execute("ALTER TABLE jobs ADD COLUMN progress INTEGER DEFAULT 0")
+             conn.commit()
+             logger.info("✅ Column 'progress' added successfully")
+
+        else:
+            logger.debug("Columns match schema")
+
+        # Check and add accounts columns
         cursor.execute("PRAGMA table_info(accounts)")
         acc_columns = [col[1] for col in cursor.fetchall()]
 
@@ -60,6 +79,47 @@ def migrate_if_needed():
              logger.info("Adding 'credits_last_checked' column to accounts...")
              cursor.execute("ALTER TABLE accounts ADD COLUMN credits_last_checked TIMESTAMP")
              conn.commit()
+             
+        if 'credits_reset_at' not in acc_columns:
+             logger.info("Adding 'credits_reset_at' column to accounts...")
+             cursor.execute("ALTER TABLE accounts ADD COLUMN credits_reset_at TIMESTAMP")
+             conn.commit()
+             
+        if 'device_id' not in acc_columns:
+             logger.info("Adding 'device_id' column to accounts...")
+             cursor.execute("ALTER TABLE accounts ADD COLUMN device_id TEXT")
+             conn.commit()
+             
+        if 'token_status' not in acc_columns:
+             logger.info("Adding 'token_status' column to accounts...")
+             cursor.execute("ALTER TABLE accounts ADD COLUMN token_status TEXT DEFAULT 'pending'")
+             conn.commit()
+             
+        if 'token_captured_at' not in acc_columns:
+             logger.info("Adding 'token_captured_at' column to accounts...")
+             cursor.execute("ALTER TABLE accounts ADD COLUMN token_captured_at TIMESTAMP")
+             conn.commit()
+
+        if 'token_expires_at' not in acc_columns:
+             logger.info("Adding 'token_expires_at' column to accounts...")
+             cursor.execute("ALTER TABLE accounts ADD COLUMN token_expires_at TIMESTAMP")
+             conn.commit()
+             
+        if 'access_token' not in acc_columns:
+             logger.info("Adding 'access_token' column to accounts...")
+             cursor.execute("ALTER TABLE accounts ADD COLUMN access_token TEXT")
+             conn.commit()
+
+        if 'user_agent' not in acc_columns:
+             logger.info("Adding 'user_agent' column to accounts...")
+             cursor.execute("ALTER TABLE accounts ADD COLUMN user_agent TEXT")
+             conn.commit()
+
+        if 'login_mode' not in acc_columns:
+             logger.info("Adding 'login_mode' column to accounts...")
+             cursor.execute("ALTER TABLE accounts ADD COLUMN login_mode TEXT DEFAULT 'auto'")
+             conn.commit()
+
             
     except Exception as e:
         logger.error(f"Migration error: {e}")

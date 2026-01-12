@@ -21,6 +21,10 @@ class Account(AccountBase):
     last_used: Optional[datetime] = None
     credits_remaining: Optional[int] = None
     credits_last_checked: Optional[datetime] = None
+    credits_reset_at: Optional[datetime] = None
+    token_status: Optional[str] = "pending"  # pending/valid/expired
+    token_captured_at: Optional[datetime] = None
+    login_mode: Optional[str] = "auto" # <--- Added this field
 
     class Config:
         orm_mode = True
@@ -31,6 +35,7 @@ class JobBase(BaseModel):
     image_path: Optional[str] = None
     duration: int = 5
     aspect_ratio: str = "16:9"
+    login_mode: Optional[str] = "auto" # "auto" or "manual"
 
 class JobCreate(JobBase):
     pass
@@ -52,6 +57,13 @@ class Job(JobBase):
     updated_at: Optional[datetime] = None
     account_id: Optional[int] = None
     account: Optional[Account] = None
+    login_mode: Optional[str] = "auto"
+    video_id: Optional[str] = None
+    aspect_ratio: Optional[str] = None
+    duration: Optional[int] = None
+    progress: Optional[int] = 0  # 0-100 percentage
+    progress_message: Optional[str] = None # Added for real-time status
+    retry_count: Optional[int] = 0
 
     class Config:
         orm_mode = True

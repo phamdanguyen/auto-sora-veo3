@@ -4,26 +4,9 @@ import sys
 
 # List from user request
 EMAILS = [
-    "lenighhoytehalt@hotmail.com",
-    "bronkirafla9lu@hotmail.com",
-    "rauensdoble14x4@hotmail.com",
-    "halianabaanm2f8@hotmail.com",
-    "brodibdermahffk@hotmail.com",
-    "vierawluker1s3m@hotmail.com",
-    "baykoanaksh4bow@hotmail.com",
-    "yueliqmorosw2kv07@hotmail.com",
-    "paraskbeppuwuwk8t@hotmail.com",
-    "zottihlicht0jkw@hotmail.com",
-    "eaganzbeighnsb@hotmail.com",
-    "haitzohondamb8d@hotmail.com",
-    "platifimadah3zzqd@hotmail.com",
-    "quailhscalo6v1@hotmail.com",
-    "kocursriehsti2whd@hotmail.com",
-    "stefldaldingtb@hotmail.com",
-    "korinorubiafb5sc@hotmail.com",
-    "perouakemme5xpzy@hotmail.com",
-    "wigetidoskimxi4@hotmail.com",
-    "bazuapdirircz8aa@hotmail.com"
+    "khj68510@gmail.com",
+    "phammjhkdbb23@gmail.com",
+    "komh331@gmail.com"
 ]
 
 PASSWORD = "Canhpk98@123"

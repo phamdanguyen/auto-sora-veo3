@@ -14,10 +14,14 @@ logger = logging.getLogger(__name__)
 
 # Valid job status transitions
 VALID_JOB_TRANSITIONS = {
-    "draft": ["pending", "cancelled"],
+    "draft": ["pending", "processing", "cancelled"],  # Allow draft -> processing directly
     "pending": ["processing", "cancelled"],
-    "processing": ["completed", "failed", "cancelled"],
-    "completed": [],  # Terminal state
+    "processing": ["sent_prompt", "generating", "download", "completed", "done", "failed", "cancelled"],
+    "sent_prompt": ["generating", "failed", "cancelled"],
+    "generating": ["download", "failed", "cancelled"],
+    "download": ["done", "completed", "failed", "cancelled"],
+    "completed": ["done"],  # Allow migration if needed
+    "done": [],  # Terminal state
     "failed": ["pending"],  # Can retry (but only via explicit retry)
     "cancelled": []  # Terminal state
 }
@@ -47,7 +51,53 @@ class SimpleTaskManager:
         self._poll_queue = None  # NEW: For polling video completion
         self._download_queue = None
         self._verify_queue = None
+        self._active_job_ids = set() # Track active job IDs to prevent duplicates
         self._initialized = False
+        self._paused = False  # Global pause flag
+        self._pause_reason: Optional[str] = None
+
+    def force_clear_active(self):
+        """Force clear active job tracking (Emergency use)"""
+        if self._active_job_ids:
+            logger.warning(f"⚠️ FORCE RESET: Clearing {len(self._active_job_ids)} active job IDs.")
+            self._active_job_ids.clear()
+
+    @property
+    def is_paused(self) -> bool:
+        return self._paused
+
+    def pause(self, reason: str = None):
+        """Pause all queue processing"""
+        log_msg = f"⏸️ System Paused. Workers will stop picking up new tasks. Reason: {reason or 'User action'}"
+        logger.warning(log_msg)
+        self._paused = True
+        self._pause_reason = reason
+
+    def resume(self):
+        """Resume queue processing"""
+        logger.info("▶️ System Resumed. Workers continuing...")
+        self._paused = False
+        self._pause_reason = None
+
+    def get_status(self) -> dict:
+        """Get comprehensive queue status"""
+        self._ensure_initialized()
+        return {
+            "paused": self._paused,
+            "pause_reason": self._pause_reason,
+            "active_jobs_count": len(self._active_job_ids),
+            "queues": {
+                "generate": self._generate_queue.qsize(),
+                "poll": self._poll_queue.qsize(),
+                "download": self._download_queue.qsize(),
+                "verify": self._verify_queue.qsize()
+            }
+        }
+
+    def remove_active_job(self, job_id: int):
+        """Manually remove a job from active set (e.g. for retry)"""
+        if job_id in self._active_job_ids:
+            self._active_job_ids.remove(job_id)
 
     def _ensure_initialized(self):
         """Initialize queues in the current event loop"""
@@ -115,29 +165,46 @@ class SimpleTaskManager:
         Args:
             job: Job model instance
         """
-        # Validate status transition
-        self._validate_job_status_transition(job, "processing")
+        try:
+            logger.info(f"🚀 Starting job #{job.id} (current status: {job.status})")
+            
+            # Validate status transition
+            self._validate_job_status_transition(job, "processing")
 
-        # Initialize task state in job using default state
-        task_state = self._default_state()
+            # Initialize task state in job using default state
+            task_state = self._default_state()
 
-        job.task_state = json.dumps(task_state)
-        job.status = "processing"
-        job.updated_at = datetime.utcnow()  # Explicit timestamp update
-        
-        # Add to generate queue
-        task = TaskContext(
-            job_id=job.id,
-            task_type="generate",
-            input_data={
-                "prompt": job.prompt,
-                "duration": job.duration,
-                "account_id": job.account_id
-            }
-        )
-        
-        await self.generate_queue.put(task)
-        logger.info(f"✅ Job #{job.id} added to generate queue")
+            job.task_state = json.dumps(task_state)
+            job.status = "processing"
+            job.updated_at = datetime.utcnow()  # Explicit timestamp update
+            
+            # Add to generate queue
+            task = TaskContext(
+                job_id=job.id,
+                task_type="generate",
+                input_data={
+                    "prompt": job.prompt,
+                    "duration": job.duration,
+                    "account_id": job.account_id
+                }
+            )
+            
+            # Add to active set
+            if job.id in self._active_job_ids:
+                 logger.warning(f"⚠️ Job #{job.id} is already active in TaskManager. Skipping start_job.")
+                 return
+
+            self._active_job_ids.add(job.id)
+
+            await self.generate_queue.put(task)
+            logger.info(f"✅ Job #{job.id} added to generate queue (queue size: {self.generate_queue.qsize()})")
+            
+        except ValueError as e:
+            logger.error(f"❌ Failed to start job #{job.id}: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"❌ Unexpected error starting job #{job.id}: {e}")
+            raise
     
     async def complete_submit(self, job, account_id: int, credits_before: int, credits_after: int):
         """
@@ -167,18 +234,18 @@ class SimpleTaskManager:
         job.updated_at = datetime.utcnow()  # Explicit timestamp update
 
         # Add to poll queue
-        task = TaskContext(
-            job_id=job.id,
-            task_type="poll",
-            input_data={
-                "account_id": account_id,
-                "submitted_at": datetime.now().isoformat(),
-                "poll_count": 0  # Initialize poll counter
-            }
-        )
+        # task = TaskContext(
+        #     job_id=job.id,
+        #     task_type="poll",
+        #     input_data={
+        #         "account_id": account_id,
+        #         "submitted_at": datetime.now().isoformat(),
+        #         "poll_count": 0  # Initialize poll counter
+        #     }
+        # )
 
-        await self.poll_queue.put(task)
-        logger.info(f"✅ Job #{job.id} submitted, moved to poll queue")
+        # await self.poll_queue.put(task)
+        logger.info(f"✅ Job #{job.id} submitted (sequential flow active - skipping poll queue add)")
     
     async def complete_poll(self, job, video_url: str):
         """
@@ -206,14 +273,14 @@ class SimpleTaskManager:
         job.updated_at = datetime.utcnow()  # Explicit timestamp update
 
         # Add to download queue
-        task = TaskContext(
-            job_id=job.id,
-            task_type="download",
-            input_data={"video_url": video_url}
-        )
+        # task = TaskContext(
+        #     job_id=job.id,
+        #     task_type="download",
+        #     input_data={"video_url": video_url}
+        # )
 
-        await self.download_queue.put(task)
-        logger.info(f"✅ Job #{job.id} video ready, moved to download queue")
+        # await self.download_queue.put(task)
+        logger.info(f"✅ Job #{job.id} video ready (sequential flow active - skipping download queue add)")
     
     async def complete_generate(self, job, video_url: str, metadata: dict):
         """
@@ -245,14 +312,14 @@ class SimpleTaskManager:
         job.updated_at = datetime.utcnow()  # Explicit timestamp update
 
         # Add to download queue
-        task = TaskContext(
-            job_id=job.id,
-            task_type="download",
-            input_data={"video_url": video_url}
-        )
+        # task = TaskContext(
+        #     job_id=job.id,
+        #     task_type="download",
+        #     input_data={"video_url": video_url}
+        # )
         
-        await self.download_queue.put(task)
-        logger.info(f"✅ Job #{job.id} moved to download queue (video: {video_url[:60]}...)")
+        # await self.download_queue.put(task)
+        logger.info(f"✅ Job #{job.id} moved to download queue (sequential flow active - skipping download queue add)")
     
     async def complete_download(self, job, local_path: str, file_size: int):
         """
@@ -275,14 +342,17 @@ class SimpleTaskManager:
         state["current_task"] = "completed"
 
         # Validate status transition before changing
-        self._validate_job_status_transition(job, "completed")
+        self._validate_job_status_transition(job, "done")
 
-        job.status = "completed"
+        job.status = "done"
         job.local_path = local_path
         job.task_state = json.dumps(state)
         job.updated_at = datetime.utcnow()  # Explicit timestamp update
 
         logger.info(f"✅ Job #{job.id} completed! Video at {local_path} ({file_size:,} bytes)")
+        
+        # Remove from active set
+        self._active_job_ids.discard(job.id)
     
     async def fail_task(self, job, task_type: str, error: str):
         """
@@ -348,6 +418,9 @@ class SimpleTaskManager:
             job.updated_at = datetime.utcnow()  # Explicit timestamp update
 
             logger.error(f"❌ Job #{job.id} failed permanently: {task_type} - {error}")
+            
+            # Remove from active set
+            self._active_job_ids.discard(job.id)
     
     def _default_state(self):
         """Default task state structure"""
@@ -437,6 +510,11 @@ class SimpleTaskManager:
         Retry post-generation tasks (Poll or Download)
         Useful if a submitted job got stuck or download failed
         """
+        # Ensure job is marked as processing
+        if job.status == "pending":
+            job.status = "processing"
+            job.updated_at = datetime.utcnow()
+
         # Await the coroutine
         state = await self.get_job_state(job)
         gen_status = state["tasks"]["generate"]["status"]
@@ -459,6 +537,8 @@ class SimpleTaskManager:
             # Generation done/submitted, but no URL -> Retry Poll
             logger.info(f"🔄 Retrying Poll for Job #{job.id}")
             state["tasks"]["poll"]["status"] = "pending"
+            state["tasks"]["poll"]["retry_count"] = 0  # Reset retry count
+            state["tasks"]["poll"]["last_error"] = None # Clear error
             state["current_task"] = "poll"
             job.task_state = json.dumps(state)
             

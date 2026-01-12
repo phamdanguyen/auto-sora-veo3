@@ -5,10 +5,11 @@ from typing import Optional, Dict
 logger = logging.getLogger(__name__)
 
 class BaseDriver:
-    def __init__(self, headless: bool = True, proxy: Optional[str] = None, user_data_dir: Optional[str] = None):
+    def __init__(self, headless: bool = True, proxy: Optional[str] = None, user_data_dir: Optional[str] = None, channel: str = "chrome"):
         self.headless = headless
         self.proxy = proxy
         self.user_data_dir = user_data_dir
+        self.channel = channel
         self.playwright = None
         self.browser = None
         self.context = None
@@ -43,8 +44,6 @@ class BaseDriver:
         ]
         
         # Use provided profile dir or default global one (not recommended for multi-account)
-        # Better default: If None, use a TEMP directory so it is fresh every time? 
-        # But for persistent bot, usually we want persistence.
         profile_path = self.user_data_dir if self.user_data_dir else "./data/browser_profile"
         print(f"DEBUG: Launching Browser with Profile Path: {profile_path}")
         logger.info(f"Launching Browser with Profile Path: {profile_path}")
@@ -53,31 +52,30 @@ class BaseDriver:
         if not os.path.exists(profile_path):
             os.makedirs(profile_path)
 
-        # Use launch_persistent_context for better stealth (closer to real user profile)
-        self.context = await self.playwright.chromium.launch_persistent_context(
-            user_data_dir=profile_path,
+        # Use browser.launch() + new_context() instead of launch_persistent_context()
+        # This avoids "Opening in existing browser session" issues on Windows
+        self.browser = await self.playwright.chromium.launch(
             headless=self.headless,
+            channel=self.channel,  # Use configured channel
             args=args,
-            ignore_default_args=["--enable-automation"],
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        )
+        
+        # Create a new context (session)
+        self.context = await self.browser.new_context(
+            accept_downloads=True,
+            ignore_https_errors=True,
             locale="en-US",
             timezone_id="America/New_York",
             proxy=proxy_config,
-            permissions=["geolocation"],
-            geolocation={"latitude": 40.7128, "longitude": -74.0060}, # NY
+            permissions=["geolocation", "clipboard-read", "clipboard-write"],
+            geolocation={"latitude": 40.7128, "longitude": -74.0060},
             color_scheme="dark",
-            viewport={"width": 1280, "height": 720}
+            viewport={"width": 1280, "height": 720},
+            storage_state=None  # Fresh session
         )
         
-        # In persistent context, the browser is managed by the context
-        self.browser = None 
-        
-        pages = self.context.pages
-        if pages:
-            self.page = pages[0]
-        else:
-            self.page = await self.context.new_page()
-            
+        self.page = await self.context.new_page()
+
         # Additional stealth script - Safe Check
         await self.page.add_init_script("""
             if (Object.getOwnPropertyDescriptor(navigator, 'webdriver') === undefined) {

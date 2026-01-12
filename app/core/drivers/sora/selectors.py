@@ -4,13 +4,18 @@ class SoraSelectors:
     LOGIN_INPUT_PASSWORD = "input[name='Passwd'], input[name='password'], input[type='password']"
     
     LOGIN_BTN_INIT = [
+        "[data-testid='login-button']",
+        ".btn.relative.btn-blue.btn-large",
         "a[href*='login']",
         "a[href*='/auth/login']", 
         "button:has-text('Log in')", 
-        "div[role='button']:has-text('Log in')"
+        "div[role='button']:has-text('Log in')",
+        "button[class*='login']",
+        "button:text-is('Log in')"
     ]
     
     LOGIN_BTN_CONTINUE = [
+        "button[data-dd-action-name='Continue'][value='email']",
         "button:text-is('Continue')", 
         "button:text-is('Next')",
         "div[role='button']:text-is('Next')",
@@ -19,6 +24,7 @@ class SoraSelectors:
     ]
     
     LOGIN_BTN_SUBMIT = [
+        "button[data-dd-action-name='Continue'][value='validate']",
         "button[type='submit']", 
         "button:has-text('Log in')", 
         "button:has-text('Sign in')",
@@ -42,7 +48,8 @@ class SoraSelectors:
         "input[autocomplete='one-time-code']",
         "text='Enter code'",
         "text='Verify your identity'",
-        "text='Verify your phone number to continue.'"
+        "text='Verify your phone number to continue.'",
+        "button[value='resend']"
     ]
 
     # Popups & Dialogs
@@ -96,6 +103,13 @@ class SoraSelectors:
         "button[data-testid='download-button']"
     ]
     
+    # Video Element - for direct download from src
+    VIDEO_ELEMENT = [
+        "video[src*='videos.openai.com']",
+        "video[src*='/raw']",
+        "video"
+    ]
+    
     MENU_BTN = [
         "button[aria-label='More options']", 
         "button[aria-label='Menu']", 
@@ -123,15 +137,19 @@ class SoraSelectors:
         "div:has-text('Generating') >> visible=true"
     ]
 
-    # Public/Share Button
-    PUBLIC_BUTTON = [
-        "button:has-text('Public')",
+    # Share Button (updated for new UI)
+    SHARE_BUTTON = [
+        "button[aria-label='Share']",
+        "button[title='Share']",
         "button:has-text('Share')",
-        "button[aria-label*='public' i]",
-        "button[aria-label*='share' i]",
-        "div[role='button']:has-text('Public')",
-        "div[role='button']:has-text('Share')"
+        "button:has-text('Public')",
+        "div[role='button']:has-text('Share')",
+        "button:has(svg.lucide-share-2)",  # Common icon class
+        "button:has(svg[data-testid='share-icon'])"
     ]
+    
+    # Public/Share Button (legacy - mapped to SHARE_BUTTON)
+    PUBLIC_BUTTON = SHARE_BUTTON
 
     # Public Link Input/Display
     PUBLIC_LINK_INPUT = [
@@ -173,4 +191,90 @@ class SoraSelectors:
         r"Videos?\s*:\s*(\d+)",            # e.g. "Videos: 15"
         r"Remaining\s*:\s*(\d+)",
         r"(\d+)\s*remaining",
+    ]
+
+    # Navigation
+    PROFILE_BTN = [
+        "button[aria-label='Profile']",
+        "a[href='/profile']", 
+        "nav button:has(img)",
+        "nav div[role='button']:has(img)"
+    ]
+    
+    FOR_YOU_DROPDOWN = [
+        "button:has-text('For you')",
+    ]
+    
+    MY_VIDEOS_OPTION = [
+        "div[role='menuitem']:has-text('My videos')",
+        "div[role='menuitem']:has-text('Your videos')"
+    ]
+
+    # Navigation
+    PROFILE_BTN = [
+        "button[aria-label='Profile']",
+        "a[href='/profile']", 
+        "nav button:has(img)",
+        "nav div[role='button']:has(img)"
+    ]
+    
+    FOR_YOU_DROPDOWN = [
+        "button:has-text('For you')",
+    ]
+    
+    MY_VIDEOS_OPTION = [
+        "div[role='menuitem']:has-text('My videos')",
+        "div[role='menuitem']:has-text('Your videos')"
+    ]
+
+    # Drafts & Grid
+    DRAFTS_LINK = "a[href='/drafts']"
+    
+    DRAFTS_FOLDER = [
+        "text='Drafts'",
+        "a[href='/drafts']",
+        "div:has-text('Drafts')",
+        "div:has-text('Drafts') >> visible=true"
+    ]
+    
+    DRAFT_ITEM = [
+        "a[href*='/drafts/']",
+        "a[href*='/d/']",
+        "div[class*='draft']",
+        "div[class*='Draft']"
+    ]
+    
+    GRID_ITEM = [
+        "div[role='gridcell']", 
+        "a[href*='/video']",
+        "div[class*='Card_container']",
+        "div[class*='Item_container']",
+        "img[alt*='video']",
+        "img[src*='blob']",
+        "video",
+        "div[class*='card']",
+        "div[class*='thumbnail']",
+        "div[style*='background-image']"
+    ]
+    
+    POST_BTN = [
+        "button:has-text('Post')",
+        "button[aria-label='Post']"
+    ]
+
+
+    # Prompt Verification in Detail View
+    PROMPT_DISPLAY = [
+        "div.max-h-\[50vh\].min-h-10.w-full.overflow-y-auto", # User provided
+        "div[class*='overflow-y-auto'] p",
+        "div[class*='overflow-y-auto']"
+    ]
+    
+    # Detail View Controls
+    DETAIL_CLOSE_BTN = [
+        "button[aria-label='Close']",
+        "button[aria-label='Close modal']",
+        "button:has(svg.lucide-x)",
+        ".lucide-x",
+        "div[role='button']:has-text('Close')"
     ]
