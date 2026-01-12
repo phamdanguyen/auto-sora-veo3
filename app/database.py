@@ -43,25 +43,25 @@ def migrate_if_needed():
             logger.info("Adding 'task_state' column to jobs table...")
             cursor.execute("ALTER TABLE jobs ADD COLUMN task_state TEXT")
             conn.commit()
-            logger.info("✅ Column 'task_state' added successfully")
+            logger.info("[OK]  Column 'task_state' added successfully")
         
         if 'login_mode' not in columns:
             logger.info("Adding 'login_mode' column to jobs table...")
             cursor.execute("ALTER TABLE jobs ADD COLUMN login_mode TEXT DEFAULT 'auto'")
             conn.commit()
-            logger.info("✅ Column 'login_mode' added successfully")
+            logger.info("[OK]  Column 'login_mode' added successfully")
 
         if 'video_id' not in columns:
              logger.info("Adding 'video_id' column to jobs table...")
              cursor.execute("ALTER TABLE jobs ADD COLUMN video_id TEXT")
              conn.commit()
-             logger.info("✅ Column 'video_id' added successfully")
+             logger.info("[OK]  Column 'video_id' added successfully")
              
         if 'progress' not in columns:
              logger.info("Adding 'progress' column to jobs table...")
              cursor.execute("ALTER TABLE jobs ADD COLUMN progress INTEGER DEFAULT 0")
              conn.commit()
-             logger.info("✅ Column 'progress' added successfully")
+             logger.info("[OK]  Column 'progress' added successfully")
 
         else:
             logger.debug("Columns match schema")

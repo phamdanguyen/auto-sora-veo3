@@ -88,7 +88,7 @@ class WatermarkRemover:
                                 if status == "completed":
                                     output = poll_result.get("output", {})
                                     result_url = output.get("video_url") or output.get("url")
-                                    logger.info(f"   ✅ Watermark removed!")
+                                    logger.info(f"   [OK]  Watermark removed!")
                                     return {
                                         "success": True,
                                         "task_id": task_id,
@@ -103,7 +103,7 @@ class WatermarkRemover:
                     return {"success": False, "error": "Timeout waiting for watermark removal"}
                     
         except Exception as e:
-            logger.error(f"❌ Kie.ai error: {e}")
+            logger.error(f"[ERROR]  Kie.ai error: {e}")
             return {"success": False, "error": str(e)}
     
     @staticmethod

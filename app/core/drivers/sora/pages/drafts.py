@@ -9,7 +9,7 @@ class SoraDraftsPage(BasePage):
     """
     [DEPRECATED] UI automation for Sora drafts page.
 
-    ⚠️ WARNING: This class uses Playwright UI automation and is DEPRECATED.
+    [WARNING]  WARNING: This class uses Playwright UI automation and is DEPRECATED.
     The main workflow now uses API-only methods in SoraDriver:
     - get_drafts_api() for retrieving drafts
     - post_video_api() for posting videos
@@ -45,7 +45,7 @@ class SoraDraftsPage(BasePage):
             # Usually strict mode might fail if multiple. 
             # Let's use first()
             await self.page.locator(video_container_sel).first.click()
-            logger.info("✅ Clicked latest draft video")
+            logger.info("[OK]  Clicked latest draft video")
             await asyncio.sleep(2)
             
             # Click Post button
@@ -55,13 +55,13 @@ class SoraDraftsPage(BasePage):
             
             if await self.page.is_visible(post_btn_sel):
                 await self.page.click(post_btn_sel)
-                logger.info("✅ Clicked Post button")
+                logger.info("[OK]  Clicked Post button")
                 await asyncio.sleep(5) # Wait for post action
             else:
                 raise Exception("Post button not found after selecting draft")
                 
         except Exception as e:
-            logger.error(f"❌ Failed to post draft: {e}")
+            logger.error(f"[ERROR]  Failed to post draft: {e}")
             raise
 
     async def get_latest_video_id_from_profile(self) -> str:
@@ -87,13 +87,13 @@ class SoraDraftsPage(BasePage):
             if href and "/video/" in href:
                 # Extract ID: /video/uuid
                 video_id = href.split("/video/")[-1]
-                logger.info(f"✅ Found Video ID: {video_id}")
+                logger.info(f"[OK]  Found Video ID: {video_id}")
                 return video_id
             else:
                 raise Exception("Could not extract ID from video link")
                 
         except Exception as e:
-            logger.error(f"❌ Failed to get video ID from profile: {e}")
+            logger.error(f"[ERROR]  Failed to get video ID from profile: {e}")
             raise
 
     async def count_drafts(self) -> int:

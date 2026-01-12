@@ -15,7 +15,7 @@ class SoraDownloadPage(BasePage):
     """
     [DEPRECATED] UI automation for Sora download functionality.
 
-    ⚠️ WARNING: This class uses Playwright UI automation and is DEPRECATED.
+    [WARNING]  WARNING: This class uses Playwright UI automation and is DEPRECATED.
     The main workflow now downloads videos directly via URL using aiohttp
     after getting the download URL from API responses.
 
@@ -102,7 +102,7 @@ class SoraDownloadPage(BasePage):
         filename = f"video_{timestamp}_{unique_id}.mp4"
         save_path = os.path.join(output_dir, filename)
         
-        logger.info(f"⬇️ Starting direct download: {video_url[:80]}...")
+        logger.info(f"[DOWNLOAD]  Starting direct download: {video_url[:80]}...")
         
         try:
             # Download using aiohttp with cookies
@@ -133,11 +133,11 @@ class SoraDownloadPage(BasePage):
                 os.remove(save_path)
                 raise Exception(f"Downloaded file too small ({file_size} bytes), likely an error response")
             
-            logger.info(f"✅ Direct download successful: {save_path} ({file_size:,} bytes)")
+            logger.info(f"[OK]  Direct download successful: {save_path} ({file_size:,} bytes)")
             return save_path, file_size
             
         except Exception as e:
-            logger.error(f"❌ Direct download failed: {e}")
+            logger.error(f"[ERROR]  Direct download failed: {e}")
             # Clean up partial file
             if os.path.exists(save_path):
                 os.remove(save_path)

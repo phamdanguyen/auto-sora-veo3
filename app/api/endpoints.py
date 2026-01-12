@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
@@ -60,7 +60,7 @@ async def global_manual_login(db: Session = Depends(get_db)):
     import os
     import jwt # PyJWT
     
-    logger.info("🔐 Starting GLOBAL MANUAL login...")
+    logger.info("[LOCK]  Starting GLOBAL MANUAL login...")
     
     # Use a generic temporary profile to capture the login
     # We don't know the account ID yet, so use a 'temp_login' prefix
@@ -202,7 +202,7 @@ async def global_manual_login(db: Session = Depends(get_db)):
             return {"ok": True, "message": f"Login successful for {detected_email}", "email": detected_email}
 
         except Exception as e:
-            logger.error(f"❌ Global Manual Login failed: {e}")
+            logger.error(f"[ERROR]  Global Manual Login failed: {e}")
             raise HTTPException(status_code=500, detail=str(e))
         finally:
             if driver:
@@ -237,7 +237,7 @@ async def login_account(account_id: int, db: Session = Depends(get_db)):
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     
-    logger.info(f"🔐 Starting login for account #{account_id} ({account.email})...")
+    logger.info(f"[LOCK]  Starting login for account #{account_id} ({account.email})...")
     
     # Acquire Lock to prevent race with workers
     lock = await account_manager.get_account_lock(account_id)
@@ -287,7 +287,7 @@ async def login_account(account_id: int, db: Session = Depends(get_db)):
             max_attempts = max_wait_seconds // poll_interval
             token_captured = False
             
-            logger.info(f"🔐 Waiting for login/2FA completion (max {max_wait_seconds}s)...")
+            logger.info(f"[LOCK]  Waiting for login/2FA completion (max {max_wait_seconds}s)...")
             logger.info("📢 If 2FA required, please complete it in the browser window.")
             
             for i in range(max_attempts):
@@ -301,7 +301,7 @@ async def login_account(account_id: int, db: Session = Depends(get_db)):
                 
                 # Log progress every 15 seconds
                 if i % 5 == 0:
-                    logger.info(f"⏳ Waiting for token... ({elapsed}s elapsed, {remaining}s remaining)")
+                    logger.info(f"[WAIT]  Waiting for token... ({elapsed}s elapsed, {remaining}s remaining)")
                 
                 await asyncio.sleep(poll_interval)
                 
@@ -311,7 +311,7 @@ async def login_account(account_id: int, db: Session = Depends(get_db)):
                         # Check if we're still on a login/verification page
                         current_url = driver.page.url
                         if "sora.chatgpt.com" in current_url and "/library" not in current_url:
-                            logger.info("🔄 Refreshing to help capture token...")
+                            logger.info("[MONITOR]  Refreshing to help capture token...")
                             await driver.page.reload(wait_until="networkidle")
                     except:
                         pass
@@ -342,7 +342,7 @@ async def login_account(account_id: int, db: Session = Depends(get_db)):
             account.cookies = driver.cookies
             
             db.commit()
-            logger.info(f"✅ Token & cookies saved for {account.email}")
+            logger.info(f"[OK]  Token & cookies saved for {account.email}")
             
             # --- OPTIONAL VERIFICATION (after save) ---
             logger.info("🕵️ Verifying token with API call (optional)...")
@@ -359,9 +359,9 @@ async def login_account(account_id: int, db: Session = Depends(get_db)):
                     
                     account.credits_last_checked = datetime.utcnow()
                     db.commit()
-                    logger.info(f"✅ Credits updated: {account.credits_remaining}")
+                    logger.info(f"[OK]  Credits updated: {account.credits_remaining}")
             except Exception as api_err:
-                logger.warning(f"⚠️ API verification failed (token still saved): {api_err}")
+                logger.warning(f"[WARNING]  API verification failed (token still saved): {api_err}")
             
             logger.info(f"🎉 Login complete! Token saved for {account.email}")
             
@@ -374,7 +374,7 @@ async def login_account(account_id: int, db: Session = Depends(get_db)):
             }
             
         except Exception as e:
-            logger.error(f"❌ Login failed for {account.email}: {e}")
+            logger.error(f"[ERROR]  Login failed for {account.email}: {e}")
             account.token_status = "pending"
             db.commit()
             raise HTTPException(status_code=500, detail=f"Login Error: {str(e)}")
@@ -406,7 +406,7 @@ async def refresh_all_accounts(db: Session = Depends(get_db)):
     accounts = db.query(models.Account).filter(models.Account.platform == "sora").all()
     results = {"total": len(accounts), "valid": 0, "expired": 0, "errors": 0}
     
-    logger.info(f"🔄 Refreshing all {len(accounts)} accounts...")
+    logger.info(f"[MONITOR]  Refreshing all {len(accounts)} accounts...")
     
     for acc in accounts:
         # SKIP MANUAL ACCOUNTS if token is missing/invalid - User must login manually
@@ -434,7 +434,7 @@ async def refresh_all_accounts(db: Session = Depends(get_db)):
             try:
                 credits_info = await driver.get_credits_api()
             except Exception as api_err:
-                logger.warning(f"⚠️ API check failed for {acc.email}: {api_err}")
+                logger.warning(f"[WARNING]  API check failed for {acc.email}: {api_err}")
                 credits_info = None  # Trigger re-login branch
             
             if credits_info:
@@ -469,13 +469,13 @@ async def refresh_all_accounts(db: Session = Depends(get_db)):
                 
                 # IF MANUAL MODE: Do not attempt auto-login
                 if acc.login_mode == 'manual':
-                     logger.warning(f"⚠️ Account {acc.email} (Manual Mode) expired. Skipping auto-login.")
+                     logger.warning(f"[WARNING]  Account {acc.email} (Manual Mode) expired. Skipping auto-login.")
                      acc.token_status = "expired"
                      results["expired"] += 1
                      continue
 
                 # Attempt re-login with 2FA support (AUTO MODE ONLY)
-                logger.info(f"🔄 Account #{acc.id} ({acc.email}) token expired. Attempting re-login...")
+                logger.info(f"[MONITOR]  Account #{acc.id} ({acc.email}) token expired. Attempting re-login...")
                 
                 # Use global browser lock for sequential login
                 from ..core.security import decrypt_password
@@ -516,7 +516,7 @@ async def refresh_all_accounts(db: Session = Depends(get_db)):
                         poll_interval = 3
                         token_captured = False
                         
-                        logger.info(f"⏳ Waiting for token capture (max {max_wait}s, user may need to complete 2FA)...")
+                        logger.info(f"[WAIT]  Waiting for token capture (max {max_wait}s, user may need to complete 2FA)...")
                         
                         for i in range(max_wait // poll_interval):
                             if login_driver.latest_access_token:
@@ -524,7 +524,7 @@ async def refresh_all_accounts(db: Session = Depends(get_db)):
                                 logger.info(f"✨ Token captured for {acc.email}!")
                                 break
                             if i % 5 == 0:
-                                logger.info(f"⏳ Waiting... ({(i+1)*poll_interval}s elapsed)")
+                                logger.info(f"[WAIT]  Waiting... ({(i+1)*poll_interval}s elapsed)")
                             await asyncio.sleep(poll_interval)
                         
                         if token_captured:
@@ -538,7 +538,7 @@ async def refresh_all_accounts(db: Session = Depends(get_db)):
                                 acc.user_agent = login_driver.latest_user_agent
                             db.commit()
                             
-                            logger.info(f"✅ Token saved for {acc.email}")
+                            logger.info(f"[OK]  Token saved for {acc.email}")
                             results["valid"] += 1
                         else:
                             logger.warning(f"⏱️ Login timeout for {acc.email}")
@@ -546,7 +546,7 @@ async def refresh_all_accounts(db: Session = Depends(get_db)):
                             results["expired"] += 1
                             
                     except Exception as login_err:
-                        logger.error(f"❌ Re-login failed for {acc.email}: {login_err}")
+                        logger.error(f"[ERROR]  Re-login failed for {acc.email}: {login_err}")
                         acc.token_status = "expired"
                         results["errors"] += 1
                     finally:
@@ -563,7 +563,7 @@ async def refresh_all_accounts(db: Session = Depends(get_db)):
             results["errors"] += 1
             
     db.commit()
-    logger.info(f"✅ Refresh complete: {results}")
+    logger.info(f"[OK]  Refresh complete: {results}")
     return results
 
 
@@ -586,7 +586,7 @@ async def check_all_credits(db: Session = Depends(get_db)):
         "details": []  # Chi tiết từng account
     }
     
-    logger.info(f"💰 Checking credits for {len(accounts)} accounts (API-only)...")
+    logger.info(f"[CREDITS]  Checking credits for {len(accounts)} accounts (API-only)...")
     
     for acc in accounts:
         detail = {"id": acc.id, "email": acc.email, "status": "unknown"}
@@ -619,7 +619,7 @@ async def check_all_credits(db: Session = Depends(get_db)):
                     detail["status"] = "expired"
                     detail["message"] = "Token/cookies đã hết hạn - cần Login lại"
                     results["expired"] += 1
-                    logger.warning(f"⚠️ Account {acc.email}: Token/cookies expired")
+                    logger.warning(f"[WARNING]  Account {acc.email}: Token/cookies expired")
                     
                 elif error_code == "NO_TOKEN":
                     detail["status"] = "no_token" 
@@ -653,7 +653,7 @@ async def check_all_credits(db: Session = Depends(get_db)):
                 detail["status"] = "success"
                 detail["credits"] = acc.credits_remaining
                 detail["message"] = f"Credits: {acc.credits_remaining}"
-                logger.info(f"✅ Credits checked for {acc.email}: {acc.credits_remaining}")
+                logger.info(f"[OK]  Credits checked for {acc.email}: {acc.credits_remaining}")
                 
             else:
                 # Unexpected response
@@ -663,7 +663,7 @@ async def check_all_credits(db: Session = Depends(get_db)):
                 results["failed"] += 1
                 
         except Exception as e:
-            logger.error(f"❌ Failed to check credits for #{acc.id} ({acc.email}): {e}")
+            logger.error(f"[ERROR]  Failed to check credits for #{acc.id} ({acc.email}): {e}")
             detail["status"] = "error"
             detail["message"] = str(e)
             results["failed"] += 1
@@ -673,7 +673,7 @@ async def check_all_credits(db: Session = Depends(get_db)):
     db.commit()
     
     # Log summary
-    logger.info(f"📊 Credit Check Summary: Updated={results['updated']}, Expired={results['expired']}, NoToken={results['no_token']}, Failed={results['failed']}")
+    logger.info(f"[STATS]  Credit Check Summary: Updated={results['updated']}, Expired={results['expired']}, NoToken={results['no_token']}, Failed={results['failed']}")
     
     return results
 
@@ -687,7 +687,7 @@ def create_job(job: schemas.JobCreate, db: Session = Depends(get_db)):
         image_path=job.image_path,
         duration=job.duration,
         aspect_ratio=job.aspect_ratio,
-        login_mode=job.login_mode,
+        # login_mode removed
         status="draft" # Default to draft so user must verify/start manually
     )
     db.add(db_job)
@@ -699,10 +699,12 @@ def create_job(job: schemas.JobCreate, db: Session = Depends(get_db)):
 def read_jobs(skip: int = 0, limit: int = 100, category: Optional[str] = None, db: Session = Depends(get_db)):
     query = db.query(models.Job)
     
+    terminal_statuses = ['completed', 'done', 'failed', 'cancelled']
+    
     if category == 'active':
-        query = query.filter(models.Job.status.notin_(['completed', 'done']))
+        query = query.filter(models.Job.status.notin_(terminal_statuses))
     elif category == 'history':
-        query = query.filter(models.Job.status.in_(['completed', 'done']))
+        query = query.filter(models.Job.status.in_(terminal_statuses))
         
     jobs = query.order_by(models.Job.id.desc()).offset(skip).limit(limit).all()
     
@@ -748,6 +750,8 @@ def update_job(job_id: int, job_update: schemas.JobUpdate, db: Session = Depends
         job.duration = job_update.duration
     if job_update.aspect_ratio is not None:
         job.aspect_ratio = job_update.aspect_ratio
+    if job_update.image_path is not None:
+        job.image_path = job_update.image_path
         
     db.commit()
     db.refresh(job)
@@ -773,7 +777,7 @@ async def cancel_job(job_id: int, db: Session = Depends(get_db)):
             if job_id in active_tasks:
                 task = active_tasks[job_id]
                 task.cancel()
-                logger.warning(f"🛑 Force Cancelled active asyncio task for Job #{job_id}")
+                logger.warning(f"[STOP]  Force Cancelled active asyncio task for Job #{job_id}")
 
         # 2. Update DB status
         # Only allow cancelling if not already completed/failed (optional)
@@ -787,10 +791,37 @@ async def cancel_job(job_id: int, db: Session = Depends(get_db)):
             
     return {"ok": True}
 
+
 # --- Bulk Actions ---
 class BulkActionRequest(BaseModel):
     action: str # retry_failed, delete_all, clear_completed
     job_ids: Optional[List[int]] = None # Optional list of specific IDs
+
+# --- File Upload ---
+@router.post("/jobs/upload")
+async def upload_file(file: UploadFile = File(...)):
+    import shutil
+    import os
+    import time
+    
+    upload_dir = "data/uploads"
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    # Create unique filename
+    timestamp = int(time.time())
+    safe_filename = file.filename.replace(" ", "_").replace("/", "").replace("\\", "")
+    filename = f"{timestamp}_{safe_filename}"
+    file_path = os.path.join(upload_dir, filename)
+    
+    # Save file
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    # Return absolute path for worker to use
+    abs_path = os.path.abspath(file_path)
+    logger.info(f"💾 File uploaded: {abs_path}")
+    
+    return {"path": abs_path, "filename": safe_filename}
 
 # --- Imports ---
 # --- Imports ---
@@ -800,7 +831,7 @@ from app.core.task_manager import task_manager
 
 @router.post("/jobs/{job_id}/retry")
 async def retry_job(job_id: int, db: Session = Depends(get_db)):
-    logger.info(f"🔄 Retry Job Request. TaskManager ID: {id(task_manager)}")
+    logger.info(f"[MONITOR]  Retry Job Request. TaskManager ID: {id(task_manager)}")
     job = db.query(models.Job).filter(models.Job.id == job_id).first()
     if job:
         # Reset job
@@ -903,11 +934,12 @@ async def bulk_job_action(req: BulkActionRequest, db: Session = Depends(get_db))
     logger.info(f"🔍 [DEBUG] Generate Queue Size: {task_manager.generate_queue.qsize()}")
     
     if tm_local_id != tm_worker_id:
-        logger.error("❌ CRITICAL: TaskManager Instance Mismatch! Worker uses different instance.")
+        logger.error("[ERROR]  CRITICAL: TaskManager Instance Mismatch! Worker uses different instance.")
 
-    if req.action == "start_selected" and req.job_ids:
+    elif req.action == "start_selected" and req.job_ids:
         # Check credits first
         if not account_manager.has_usable_account(db, platform="sora"):
+             logger.error("[ERROR]  Bulk Start Failed: No usable account (credits Check)")
              raise HTTPException(status_code=400, detail="Tổng credits còn lại không đủ! Vui lòng nạp thêm.")
 
         jobs = db.query(models.Job).filter(models.Job.id.in_(req.job_ids)).with_for_update().all()
@@ -919,17 +951,18 @@ async def bulk_job_action(req: BulkActionRequest, db: Session = Depends(get_db))
     elif req.action == "start_all":
         # Check credits first
         if not account_manager.has_usable_account(db, platform="sora"):
+             logger.error("[ERROR]  Bulk Start All Failed: No usable account (credits Check)")
              raise HTTPException(status_code=400, detail="Tổng credits còn lại không đủ! Vui lòng nạp thêm.")
 
         # Start all draft/pending jobs
         jobs = db.query(models.Job).filter(models.Job.status.in_(["draft", "pending"])).all()
-        logger.info(f"🚀 Bulk Start All: Found {len(jobs)} jobs to start")
+        logger.info(f"[START]  Bulk Start All: Found {len(jobs)} jobs to start")
         
         for job in jobs:
             try:
                 await task_manager.start_job(job)
             except Exception as e:
-                logger.error(f"❌ Failed to start job #{job.id} during bulk start: {e}")
+                logger.error(f"[ERROR]  Failed to start job #{job.id} during bulk start: {e}")
         
         db.commit()
 
@@ -939,8 +972,10 @@ async def bulk_job_action(req: BulkActionRequest, db: Session = Depends(get_db))
             # IMMEDIATE CREDIT/AVAILABILITY CHECK
             if not account_manager.has_usable_account(db, platform="sora", specific_account_id=job.account_id):
                 if job.account_id:
+                    logger.error(f"[ERROR]  Retry Selected Failed: No usable account for Job #{job.id} (Account #{job.account_id})")
                     raise HTTPException(status_code=400, detail="Tài khoản được chỉ định đã hết quota.")
                 else:
+                    logger.error("[ERROR]  Retry Selected Failed: No usable account globally")
                     raise HTTPException(status_code=400, detail="Tổng credits còn lại không đủ! Hệ thống đang tạm dừng.")
             # Retry (Clean slate)
             job.status = "pending"
@@ -964,6 +999,7 @@ async def bulk_job_action(req: BulkActionRequest, db: Session = Depends(get_db))
     elif req.action == "retry_failed":
         # Check credits first
         if not account_manager.has_usable_account(db, platform="sora"):
+             logger.error("[ERROR]  Retry Failed Failed: No usable account")
              raise HTTPException(status_code=400, detail="No available accounts with credits found!")
 
         jobs = db.query(models.Job).filter(models.Job.status.in_(["failed", "cancelled"])).all()
@@ -999,7 +1035,7 @@ async def system_reset(db: Session = Depends(get_db)):
     2. Clear active job IDs
     3. Reset 'processing' jobs to 'pending'
     """
-    logger.warning("⚠️ SYSTEM RESET TRIGGERED BY USER")
+    logger.warning("[WARNING]  SYSTEM RESET TRIGGERED BY USER")
     
     # 1. Clear busy accounts
     account_manager.force_reset()
@@ -1019,7 +1055,7 @@ async def system_reset(db: Session = Depends(get_db)):
         count += 1
     
     db.commit()
-    logger.info(f"✅ System Reset complete. Cancelled {count} stuck jobs.")
+    logger.info(f"[OK]  System Reset complete. Cancelled {count} stuck jobs.")
     return {"ok": True, "reset_count": count}
 
 @router.post("/system/pause")

@@ -37,45 +37,54 @@ async def lifespan(app: FastAPI):
     from sqlalchemy.orm import Session
     from . import models
     
-    logger.info("🧹 Resetting non-completed jobs to 'draft' status...")
+    logger.info("[STARTUP] Resetting non-completed jobs to 'draft' status...")
     db = Session(bind=engine)
     try:
         # Update all jobs that are not completed or done to 'draft'
-        # This covers: pending, processing, sent_prompt, generating, download, failed, cancelled
-        db.query(models.Job).filter(
-            models.Job.status.notin_(['completed', 'done'])
-        ).update({models.Job.status: 'draft'}, synchronize_session=False)
-        db.commit()
-        logger.info("✅ Job reset complete.")
+        # This covers: pending, processing, sent_prompt, generating, download
+        # Query first to log what we are resetting (Debugging Persistence)
+        jobs_to_reset = db.query(models.Job).filter(
+            models.Job.status.notin_(['completed', 'done', 'failed', 'cancelled', 'pending', 'download'])
+        ).all()
+        
+        if jobs_to_reset:
+            logger.warning(f"[STARTUP] Found {len(jobs_to_reset)} interrupted jobs. Resetting to 'draft'...")
+            for j in jobs_to_reset:
+                logger.warning(f"  -> Resetting Job #{j.id} (Status: {j.status}) to 'draft'")
+                j.status = 'draft'
+            
+            db.commit()
+            logger.info("[OK] Job reset complete.")
+        else:
+            logger.info("[STARTUP] No interrupted jobs found needing reset.")
     except Exception as e:
-        logger.error(f"❌ Failed to reset jobs on startup: {e}")
+        logger.error(f"[ERROR] Failed to reset jobs on startup: {e}")
         db.rollback()
     finally:
         db.close()
     
     # Start Background Workers
-    auto_start = os.getenv("AUTO_START_WORKERS", "True").lower() == "true"
+    # auto_start = os.getenv("AUTO_START_WORKERS", "True").lower() == "true"
     
-    if auto_start:
-        logger.info("✅ Auto-starting workers based on configuration...")
-        # 1. Generate Worker (handles Sora submission)
-        asyncio.create_task(worker.start_worker())
-        
-        # 2. Download/Verify Worker (Scanning mode)
-        asyncio.create_task(worker_download.start_worker())
-    else:
-        logger.info("⏸️ Auto-start disabled. Workers not started. Use API/Dashboard to start.")
+    # ALWAYS START WORKERS as per user request
+    logger.info("[OK] Auto-starting workers (Values enforced to True)...")
+    
+    # 1. Generate Worker (handles Sora submission)
+    asyncio.create_task(worker.start_worker())
+    
+    # 2. Download/Verify Worker (Scanning mode)
+    asyncio.create_task(worker_download.start_worker())
         
     yield
     
     # --- SHUTDOWN ---
-    logger.warning("🛑 Application shutdown triggered. Stopping workers...")
+    logger.warning("[SHUTDOWN] Application shutdown triggered. Stopping workers...")
     await worker.stop_worker()
     
     # Also clear any locks if feasible
     from .core import account_manager
     account_manager.force_reset()
-    logger.info("✅ Shutdown complete.")
+    logger.info("[OK] Shutdown complete.")
 
 app = FastAPI(title="Uni-Video Automation", lifespan=lifespan)
 
@@ -100,6 +109,11 @@ if os.path.exists(static_dir):
 ABS_DOWNLOAD_DIR = os.path.abspath("data/downloads")
 os.makedirs(ABS_DOWNLOAD_DIR, exist_ok=True)
 app.mount("/downloads", StaticFiles(directory=ABS_DOWNLOAD_DIR), name="downloads")
+
+# Mount Uploads
+ABS_UPLOAD_DIR = os.path.abspath("data/uploads")
+os.makedirs(ABS_UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=ABS_UPLOAD_DIR), name="uploads")
 
 # CORS (allow all for local dev)
 app.add_middleware(

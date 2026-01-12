@@ -59,7 +59,7 @@ class SimpleTaskManager:
     def force_clear_active(self):
         """Force clear active job tracking (Emergency use)"""
         if self._active_job_ids:
-            logger.warning(f"⚠️ FORCE RESET: Clearing {len(self._active_job_ids)} active job IDs.")
+            logger.warning(f"[WARNING]  FORCE RESET: Clearing {len(self._active_job_ids)} active job IDs.")
             self._active_job_ids.clear()
 
     @property
@@ -107,7 +107,7 @@ class SimpleTaskManager:
             self._download_queue = asyncio.Queue(maxsize=self.MAX_QUEUE_SIZE)
             self._verify_queue = asyncio.Queue(maxsize=self.MAX_QUEUE_SIZE)
             self._initialized = True
-            logger.info(f"✅ SimpleTaskManager queues initialized (max_size={self.MAX_QUEUE_SIZE})")
+            logger.info(f"[OK]  SimpleTaskManager queues initialized (max_size={self.MAX_QUEUE_SIZE})")
 
 
     @property
@@ -146,7 +146,7 @@ class SimpleTaskManager:
         # Log warning if queue is getting full (>80%)
         if queue.qsize() > self.MAX_QUEUE_SIZE * 0.8:
             logger.warning(
-                f"⚠️ Queue nearly full: {queue.qsize()}/{self.MAX_QUEUE_SIZE} tasks. "
+                f"[WARNING]  Queue nearly full: {queue.qsize()}/{self.MAX_QUEUE_SIZE} tasks. "
                 f"Attempting to enqueue {task.task_type} for job #{task.job_id}"
             )
 
@@ -166,7 +166,7 @@ class SimpleTaskManager:
             job: Job model instance
         """
         try:
-            logger.info(f"🚀 Starting job #{job.id} (current status: {job.status})")
+            logger.info(f"[START]  Starting job #{job.id} (current status: {job.status})")
             
             # Validate status transition
             self._validate_job_status_transition(job, "processing")
@@ -191,19 +191,19 @@ class SimpleTaskManager:
             
             # Add to active set
             if job.id in self._active_job_ids:
-                 logger.warning(f"⚠️ Job #{job.id} is already active in TaskManager. Skipping start_job.")
+                 logger.warning(f"[WARNING]  Job #{job.id} is already active in TaskManager. Skipping start_job.")
                  return
 
             self._active_job_ids.add(job.id)
 
             await self.generate_queue.put(task)
-            logger.info(f"✅ Job #{job.id} added to generate queue (queue size: {self.generate_queue.qsize()})")
+            logger.info(f"[OK]  Job #{job.id} added to generate queue (queue size: {self.generate_queue.qsize()})")
             
         except ValueError as e:
-            logger.error(f"❌ Failed to start job #{job.id}: {e}")
+            logger.error(f"[ERROR]  Failed to start job #{job.id}: {e}")
             raise
         except Exception as e:
-            logger.error(f"❌ Unexpected error starting job #{job.id}: {e}")
+            logger.error(f"[ERROR]  Unexpected error starting job #{job.id}: {e}")
             raise
     
     async def complete_submit(self, job, account_id: int, credits_before: int, credits_after: int):
@@ -245,7 +245,7 @@ class SimpleTaskManager:
         # )
 
         # await self.poll_queue.put(task)
-        logger.info(f"✅ Job #{job.id} submitted (sequential flow active - skipping poll queue add)")
+        logger.info(f"[OK]  Job #{job.id} submitted (sequential flow active - skipping poll queue add)")
     
     async def complete_poll(self, job, video_url: str):
         """
@@ -280,7 +280,7 @@ class SimpleTaskManager:
         # )
 
         # await self.download_queue.put(task)
-        logger.info(f"✅ Job #{job.id} video ready (sequential flow active - skipping download queue add)")
+        logger.info(f"[OK]  Job #{job.id} video ready (sequential flow active - skipping download queue add)")
     
     async def complete_generate(self, job, video_url: str, metadata: dict):
         """
@@ -319,7 +319,7 @@ class SimpleTaskManager:
         # )
         
         # await self.download_queue.put(task)
-        logger.info(f"✅ Job #{job.id} moved to download queue (sequential flow active - skipping download queue add)")
+        logger.info(f"[OK]  Job #{job.id} moved to download queue (sequential flow active - skipping download queue add)")
     
     async def complete_download(self, job, local_path: str, file_size: int):
         """
@@ -349,7 +349,7 @@ class SimpleTaskManager:
         job.task_state = json.dumps(state)
         job.updated_at = datetime.utcnow()  # Explicit timestamp update
 
-        logger.info(f"✅ Job #{job.id} completed! Video at {local_path} ({file_size:,} bytes)")
+        logger.info(f"[OK]  Job #{job.id} completed! Video at {local_path} ({file_size:,} bytes)")
         
         # Remove from active set
         self._active_job_ids.discard(job.id)
@@ -402,7 +402,7 @@ class SimpleTaskManager:
             )
             await queue.put(task)
             
-            logger.warning(f"⚠️ Job #{job.id} {task_type} failed, retry {retry_count}/{max_retries}: {error}")
+            logger.warning(f"[WARNING]  Job #{job.id} {task_type} failed, retry {retry_count}/{max_retries}: {error}")
         else:
             # Max retries reached - fail job
             task_state["status"] = "failed"
@@ -417,7 +417,7 @@ class SimpleTaskManager:
             job.task_state = json.dumps(state)
             job.updated_at = datetime.utcnow()  # Explicit timestamp update
 
-            logger.error(f"❌ Job #{job.id} failed permanently: {task_type} - {error}")
+            logger.error(f"[ERROR]  Job #{job.id} failed permanently: {task_type} - {error}")
             
             # Remove from active set
             self._active_job_ids.discard(job.id)
@@ -521,7 +521,7 @@ class SimpleTaskManager:
         
         if job.video_url:
             # Video URL exists -> Retry Download
-            logger.info(f"🔄 Retrying Download for Job #{job.id}")
+            logger.info(f"[MONITOR]  Retrying Download for Job #{job.id}")
             state["tasks"]["download"]["status"] = "pending"
             state["current_task"] = "download"
             job.task_state = json.dumps(state)
@@ -535,7 +535,7 @@ class SimpleTaskManager:
             
         elif gen_status in ["submitted", "completed"]:
             # Generation done/submitted, but no URL -> Retry Poll
-            logger.info(f"🔄 Retrying Poll for Job #{job.id}")
+            logger.info(f"[MONITOR]  Retrying Poll for Job #{job.id}")
             state["tasks"]["poll"]["status"] = "pending"
             state["tasks"]["poll"]["retry_count"] = 0  # Reset retry count
             state["tasks"]["poll"]["last_error"] = None # Clear error
@@ -559,7 +559,7 @@ class SimpleTaskManager:
             )
             await self.poll_queue.put(task)
         else:
-            logger.warning(f"⚠️ Job #{job.id} not in a state to retry subtasks (Gen Status: {gen_status})")
+            logger.warning(f"[WARNING]  Job #{job.id} not in a state to retry subtasks (Gen Status: {gen_status})")
 
 # Global instance
 task_manager = SimpleTaskManager()

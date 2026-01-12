@@ -25,7 +25,7 @@ async def download_from_url(page, video_url: str, download_dir: str = "data/down
         Exception: If download fails
     """
     try:
-        logger.info(f"📥 Downloading video from {video_url[:80]}...")
+        logger.info(f"[QUEUE]  Downloading video from {video_url[:80]}...")
         
         # Create download directory
         os.makedirs(download_dir, exist_ok=True)
@@ -48,10 +48,10 @@ async def download_from_url(page, video_url: str, download_dir: str = "data/down
         with open(local_path, "wb") as f:
             f.write(body)
         
-        logger.info(f"✅ Downloaded video: {local_path} ({file_size:,} bytes)")
+        logger.info(f"[OK]  Downloaded video: {local_path} ({file_size:,} bytes)")
         
         return local_path, file_size
         
     except Exception as e:
-        logger.error(f"❌ Download failed: {e}")
+        logger.error(f"[ERROR]  Download failed: {e}")
         raise

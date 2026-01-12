@@ -60,12 +60,20 @@ def _get_lock():
 
 def get_available_account(db: Session, platform: str, exclude_ids: list[int] = None) -> Optional[models.Account]:
     """
-    Get a 'live' account that is not currently busy.
+    Get an account with credits available and not currently busy.
+    No more status column - only credits matter.
     exclude_ids: Optional list of account IDs to ignore (e.g. recently failed).
     """
+    from sqlalchemy import or_
+
     query = db.query(models.Account).filter(
         models.Account.platform == platform,
-        models.Account.status != "die"  # Relaxed check: Allow retry of auth_failed/cooldown/etc.
+        # Only check if account has credits
+        # Allow if credits_remaining is None (not checked yet) OR credits_remaining > 0
+        or_(
+            models.Account.credits_remaining == None,
+            models.Account.credits_remaining > 0
+        )
     )
 
     if exclude_ids:
@@ -105,76 +113,36 @@ async def mark_account_free(account_id: int):
         logger.debug(f"Account #{account_id} marked as free. Busy accounts: {_busy_accounts}")
 
 
-def mark_account_quota_exhausted(db: Session, account: models.Account):
-    """Mark an account as having exhausted its quota"""
-    account.status = "quota_exhausted"
-    account.last_used = datetime.utcnow()
-    db.commit()
-    logger.warning(f"Account #{account.id} ({account.email}) marked as quota_exhausted")
+# REMOVED: mark_account_quota_exhausted() - No more status column
+# Account availability is purely based on credits_remaining
 
+# REMOVED: mark_account_verification_needed() - No more status column
+# If account needs verification, it should be handled in worker runtime
 
-def mark_account_verification_needed(db: Session, account: models.Account):
-    """Mark an account as requiring verification/checkpoint"""
-    account.status = "checkpoint"
-    account.last_used = datetime.utcnow()
-    db.commit()
-    logger.warning(f"Account #{account.id} ({account.email}) marked as checkpoint/verification_needed")
-
-
-
-def reset_quota_exhausted_accounts(db: Session, hours: int = 24):
-    """
-    Reset accounts that have been quota_exhausted/cooldown for more than X hours.
-    Sora typically resets free quota daily.
-    """
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
-    # Handle both old "cooldown" status and new "quota_exhausted" status
-    updated = db.query(models.Account).filter(
-        models.Account.status.in_(["quota_exhausted", "cooldown"]),
-        models.Account.last_used < cutoff
-    ).update({"status": "live"}, synchronize_session=False)
-    db.commit()
-    if updated > 0:
-        logger.info(f"Reset {updated} quota_exhausted/cooldown accounts back to live")
-    return updated
-
-    if updated > 0:
-        logger.info(f"Reset {updated} quota_exhausted/cooldown accounts back to live")
-    return updated
+# REMOVED: reset_quota_exhausted_accounts() - No more status column
+# Credits are checked/updated in real-time via API
 
 
 def has_usable_account(db: Session, platform: str, specific_account_id: int = None) -> bool:
     """
-    Check if there is at least one usable account:
-    1. Status NOT IN [die, quota_exhausted, checkpoint]
-    2. Credits_Remaining > 0 (if tracked, i.e. not None)
+    Check if there is at least one usable account with credits.
+    No more status column - only credits matter.
     """
-    query = db.query(models.Account).filter(models.Account.platform == platform)
-    
-    # Define unusable statuses
-    unusable = ["die", "quota_exhausted", "checkpoint", "verification_needed"]
-    query = query.filter(models.Account.status.notin_(unusable))
-
-    # Also check numeric credits if available
-    # Allow if credits_remaining is None (not checked yet) OR credits_remaining > 0
     from sqlalchemy import or_
+
+    query = db.query(models.Account).filter(models.Account.platform == platform)
+
+    # Only check credits
+    # Allow if credits_remaining is None (not checked yet) OR credits_remaining > 0
     query = query.filter(or_(
         models.Account.credits_remaining == None,
         models.Account.credits_remaining > 0
     ))
-    
+
     if specific_account_id:
         query = query.filter(models.Account.id == specific_account_id)
 
     return query.count() > 0
-    """Get count of available accounts"""
-    count = db.query(func.count(models.Account.id)).filter(
-        models.Account.platform == platform,
-        models.Account.status == "live"
-    ).scalar()
-
-    # Subtract busy accounts
-    return max(0, count - len(_busy_accounts))
 
 
 def get_busy_account_ids() -> Set[int]:
@@ -185,9 +153,9 @@ def get_busy_account_ids() -> Set[int]:
 def force_reset():
     """Force clear all busy states and locks (Emergency use)"""
     global _busy_accounts, _account_file_locks
-    logger.warning(f"⚠️ FORCE RESET: Clearing {_busy_accounts} from busy list.")
+    logger.warning(f"[WARNING]  FORCE RESET: Clearing {_busy_accounts} from busy list.")
     _busy_accounts.clear()
     
     # Also clear lock instances to prevent deadlock if old worker is stuck holding one
-    logger.warning(f"⚠️ FORCE RESET: Clearing {len(_account_file_locks)} account locks.")
+    logger.warning(f"[WARNING]  FORCE RESET: Clearing {len(_account_file_locks)} account locks.")
     _account_file_locks.clear()

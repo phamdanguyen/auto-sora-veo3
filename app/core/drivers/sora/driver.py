@@ -143,7 +143,7 @@ class SoraDriver(BaseDriver):
                     token = headers["authorization"]
                     if token.startswith("Bearer "):
                         if self.latest_access_token != token:
-                            logger.info(f"🔑 Captured NEW Access Token! ({token[:15]}...)")
+                            logger.info(f"[TOKEN]  Captured NEW Access Token! ({token[:15]}...)")
                             self.latest_access_token = token
                             if "user-agent" in headers:
                                 self.latest_user_agent = headers["user-agent"]
@@ -179,7 +179,7 @@ class SoraDriver(BaseDriver):
             elif "tasks" in url: endpoint_type = "TASKS"
             elif "nf/create" in url: endpoint_type = "SUBMISSION"
             
-            logger.info(f"📦 Intercepted {endpoint_type} JSON ({len(str(data))} bytes)")
+            logger.info(f"[TASK]  Intercepted {endpoint_type} JSON ({len(str(data))} bytes)")
             
             # Store data for analysis/usage
             self.latest_intercepted_data = data
@@ -187,12 +187,12 @@ class SoraDriver(BaseDriver):
             if endpoint_type == "SUBMISSION":
                 # Parse submission result for credits
                 self.last_submission_result = data
-                logger.info("✅ Captured SUBMISSION response!")
+                logger.info("[OK]  Captured SUBMISSION response!")
                 if "rate_limit_and_credit_balance" in data:
                     balance = data["rate_limit_and_credit_balance"]
                     daily_creds = balance.get("estimated_num_videos_remaining")
                     reset_secs = balance.get("access_resets_in_seconds")
-                    logger.info(f"💰 Credits Remaining: {daily_creds} | Reset in: {reset_secs}s")
+                    logger.info(f"[CREDITS]  Credits Remaining: {daily_creds} | Reset in: {reset_secs}s")
             
             # Parse and cache items
             items = []
@@ -232,7 +232,7 @@ class SoraDriver(BaseDriver):
                     # logger.info(f"   - Cached {vid_id}: {status} | URL: {bool(download_url)}")
 
         except Exception as e:
-            # logger.warning(f"⚠️ Failed to parse intercepted JSON from {response.url}: {e}")
+            # logger.warning(f"[WARNING]  Failed to parse intercepted JSON from {response.url}: {e}")
             pass
 
     async def wait_for_completion_api(self, match_prompt: str, timeout: int = 600, task_id: Optional[str] = None) -> Optional[dict]:
@@ -249,9 +249,9 @@ class SoraDriver(BaseDriver):
             dict with video data including download_url, or None if timeout
         """
         if task_id:
-            logger.info(f"⏳ Waiting for video completion (API) - Task ID: {task_id}")
+            logger.info(f"[WAIT]  Waiting for video completion (API) - Task ID: {task_id}")
         else:
-            logger.info(f"⏳ Waiting for video completion (API) - Prompt: '{match_prompt[:30]}...' (NO task_id - using fuzzy match)")
+            logger.info(f"[WAIT]  Waiting for video completion (API) - Prompt: '{match_prompt[:30]}...' (NO task_id - using fuzzy match)")
 
         start_time = time.time()
         poll_interval = 15  # Poll every 15 seconds
@@ -259,15 +259,15 @@ class SoraDriver(BaseDriver):
         while time.time() - start_time < timeout:
             try:
                 # 1. Check pending tasks first
-                pending = await self._api_get_pending_tasks()
+                pending = await self.get_pending_tasks_api()
                 if pending is not None:
                     # Check if our task is still pending
                     is_pending = False
                     for task in pending:
                         # PRIORITY 1: Match by task_id (exact match)
                         if task_id and task.get("id") == task_id:
-                            progress = task.get("progress_pct", 0) * 100
-                            logger.info(f"📊 Task {task_id} still pending: {progress:.1f}% complete")
+                            progress = (task.get("progress_pct") or 0) * 100
+                            logger.info(f"[STATS]  Task {task_id} still pending: {progress:.1f}% complete")
                             is_pending = True
                             break
 
@@ -275,8 +275,8 @@ class SoraDriver(BaseDriver):
                         if not task_id:
                             task_prompt = task.get("prompt", "")
                             if match_prompt[:30].strip() in task_prompt or task_prompt[:30].strip() in match_prompt:
-                                progress = task.get("progress_pct", 0) * 100
-                                logger.info(f"📊 Task still pending (prompt match): {progress:.1f}% complete")
+                                progress = (task.get("progress_pct") or 0) * 100
+                                logger.info(f"[STATS]  Task still pending (prompt match): {progress:.1f}% complete")
                                 is_pending = True
                                 break
 
@@ -291,7 +291,7 @@ class SoraDriver(BaseDriver):
                                 if task_id and draft.get("task_id") == task_id:
                                     download_url = draft.get("url") or draft.get("downloadable_url") or draft.get("video_url")
                                     if download_url:
-                                        logger.info(f"✅ Video completed! Task ID: {task_id}")
+                                        logger.info(f"[OK]  Video completed! Task ID: {task_id}")
                                         return {
                                             "id": draft.get("id"),
                                             "task_id": task_id,
@@ -300,7 +300,7 @@ class SoraDriver(BaseDriver):
                                             "status": "completed"
                                         }
                                     elif draft.get("status") == "failed":
-                                        logger.warning(f"❌ Video generation failed for task {task_id}")
+                                        logger.warning(f"[ERROR]  Video generation failed for task {task_id}")
                                         return {"status": "failed", "id": draft.get("id"), "task_id": task_id}
 
                                 # FALLBACK: Match by prompt (less reliable)
@@ -309,7 +309,7 @@ class SoraDriver(BaseDriver):
                                     if match_prompt[:30].strip() in draft_prompt or draft_prompt[:30].strip() in match_prompt:
                                         download_url = draft.get("url") or draft.get("downloadable_url") or draft.get("video_url")
                                         if download_url:
-                                            logger.warning(f"⚠️ Video matched by PROMPT (no task_id)! ID: {draft.get('id')}")
+                                            logger.warning(f"[WARNING]  Video matched by PROMPT (no task_id)! ID: {draft.get('id')}")
                                             return {
                                                 "id": draft.get("id"),
                                                 "download_url": download_url,
@@ -317,17 +317,17 @@ class SoraDriver(BaseDriver):
                                                 "status": "completed"
                                             }
                                         elif draft.get("status") == "failed":
-                                            logger.warning(f"❌ Video generation failed (prompt match)")
+                                            logger.warning(f"[ERROR]  Video generation failed (prompt match)")
                                             return {"status": "failed", "id": draft.get("id")}
 
             except Exception as e:
                 logger.warning(f"API poll error: {e}")
 
             elapsed = int(time.time() - start_time)
-            logger.info(f"⏳ Polling... ({elapsed}s / {timeout}s)")
+            logger.info(f"[WAIT]  Polling... ({elapsed}s / {timeout}s)")
             await asyncio.sleep(poll_interval)
 
-        logger.error(f"❌ Timeout waiting for video completion after {timeout}s")
+        logger.error(f"[ERROR]  Timeout waiting for video completion after {timeout}s")
         return None
 
     async def _api_get_pending_tasks(self) -> Optional[list]:
@@ -392,7 +392,7 @@ class SoraDriver(BaseDriver):
             None only if no token available
         """
         if not self.latest_access_token:
-            logger.warning("❌ get_credits_api failed: No access token captured.")
+            logger.warning("[ERROR]  get_credits_api failed: No access token captured.")
             return {"error": "No access token", "error_code": "NO_TOKEN"}
 
         # --- STRATEGY 1: BROWSER CONTEXT (Preferred) ---
@@ -431,16 +431,16 @@ class SoraDriver(BaseDriver):
                         
                         if estimated_remaining is not None:
                             total_credits = int(estimated_remaining) + int(purchased_remaining)
-                            logger.info(f"✅ Credit Check (Browser): Free={estimated_remaining} | Total={total_credits}")
+                            logger.info(f"[OK]  Credit Check (Browser): Free={estimated_remaining} | Total={total_credits}")
                             return {"credits": total_credits, "source": "browser_nf_check", "reset_seconds": reset_seconds}
                             
                     # Parse billing format
                     elif "credits" in data:
-                         logger.info(f"✅ Credit Check (Browser Billing): {data['credits']}")
+                         logger.info(f"[OK]  Credit Check (Browser Billing): {data['credits']}")
                          return {"credits": int(data["credits"]), "source": "browser_billing"}
                          
             except Exception as e:
-                logger.warning(f"⚠️ Browser credit check failed: {e}")
+                logger.warning(f"[WARNING]  Browser credit check failed: {e}")
 
         # --- STRATEGY 2: API-ONLY (Fallback) ---
         
@@ -452,7 +452,7 @@ class SoraDriver(BaseDriver):
             token_data = get_sentinel_token(flow="sora_create_task") # Use existing flow
             sentinel_header = json.dumps(json.loads(token_data) if isinstance(token_data, str) else token_data)
         except Exception as s_err:
-             logger.warning(f"⚠️ Credit check sentinel gen failed: {s_err}")
+             logger.warning(f"[WARNING]  Credit check sentinel gen failed: {s_err}")
 
         headers = {
             "Authorization": self.latest_access_token,
@@ -478,7 +478,7 @@ class SoraDriver(BaseDriver):
         
         # Log cookie status
         if expired_cookies:
-            logger.warning(f"⚠️ {len(expired_cookies)} cookies đã hết hạn: {expired_cookies[:5]}...")
+            logger.warning(f"[WARNING]  {len(expired_cookies)} cookies đã hết hạn: {expired_cookies[:5]}...")
         logger.info(f"🍪 Using {len(cookie_dict)} cookies for API call")
 
         # Build cookie string for curl_cffi
@@ -497,13 +497,14 @@ class SoraDriver(BaseDriver):
                 "Accept": "*/*",
             }
             
-            logger.info("🌐 Using curl_cffi for Cloudflare bypass...")
+            logger.info("[API]  Using curl_cffi for Cloudflare bypass...")
             
             # Priority 1: /nf/check
             response = curl_requests.get(
                 "https://sora.chatgpt.com/backend/nf/check",
                 headers=curl_headers,
-                impersonate="chrome"
+                impersonate="chrome",
+                timeout=30
             )
             
             logger.debug(f"🔍 /nf/check Response ({response.status_code})")
@@ -512,7 +513,7 @@ class SoraDriver(BaseDriver):
                 try:
                     data = response.json()
                 except:
-                    logger.error(f"❌ Failed to decode JSON: {response.text[:200]}")
+                    logger.error(f"[ERROR]  Failed to decode JSON: {response.text[:200]}")
                     data = {}
                 
                 # Parse rate_limit_and_credit_balance
@@ -524,10 +525,10 @@ class SoraDriver(BaseDriver):
                 
                 if estimated_remaining is not None:
                     total_credits = int(estimated_remaining) + int(purchased_remaining)
-                    logger.info(f"✅ Credit Check (curl_cffi): Free={estimated_remaining} | Purchased={purchased_remaining} | Total={total_credits}")
+                    logger.info(f"[OK]  Credit Check (curl_cffi): Free={estimated_remaining} | Purchased={purchased_remaining} | Total={total_credits}")
                     
                     if rate_limit_reached:
-                        logger.warning(f"⚠️ Rate Limit Reached! Reset in {reset_seconds}s")
+                        logger.warning(f"[WARNING]  Rate Limit Reached! Reset in {reset_seconds}s")
                         return {"credits": 0, "source": "curl_rate_limited", "reset_seconds": reset_seconds}
                     
                     return {"credits": total_credits, "source": "curl_nf_check", "reset_seconds": reset_seconds}
@@ -535,18 +536,18 @@ class SoraDriver(BaseDriver):
             elif response.status_code in [401, 403]:
                 # Check if Cloudflare challenge
                 if "Just a moment" in response.text:
-                    logger.error("❌ Cloudflare challenge - cookies may need refresh")
+                    logger.error("[ERROR]  Cloudflare challenge - cookies may need refresh")
                     return {"error": "Cloudflare challenge", "error_code": "CLOUDFLARE_BLOCK"}
                 else:
-                    logger.error(f"❌ nf/check Auth Failed (HTTP {response.status_code})")
+                    logger.error(f"[ERROR]  nf/check Auth Failed (HTTP {response.status_code})")
                     return {"error": f"Auth failed: HTTP {response.status_code}", "error_code": "TOKEN_EXPIRED"}
                     
             elif response.status_code == 429:
-                logger.warning("⚠️ Rate Limited (HTTP 429)")
+                logger.warning("[WARNING]  Rate Limited (HTTP 429)")
                 return {"error": "Rate limited", "error_code": "RATE_LIMITED"}
             
             # Fallback: /billing/credit_balance
-            logger.info("🔄 Trying fallback: /billing/credit_balance")
+            logger.info("[MONITOR]  Trying fallback: /billing/credit_balance")
             response = curl_requests.get(
                 "https://sora.chatgpt.com/backend/billing/credit_balance",
                 headers=curl_headers,
@@ -556,18 +557,18 @@ class SoraDriver(BaseDriver):
             if response.status_code == 200:
                 data = response.json()
                 if "credits" in data:
-                    logger.info(f"✅ Credit Check (curl billing): {data['credits']}")
+                    logger.info(f"[OK]  Credit Check (curl billing): {data['credits']}")
                     return {"credits": int(data["credits"]), "source": "curl_billing"}
                     
         except ImportError:
-            logger.warning("⚠️ curl_cffi not installed, falling back to aiohttp...")
+            logger.warning("[WARNING]  curl_cffi not installed, falling back to aiohttp...")
             # Fallback to aiohttp (may fail with Cloudflare)
             return await self._get_credits_aiohttp(headers, cookie_dict, expired_cookies)
         except Exception as e:
-            logger.error(f"❌ curl_cffi exception: {e}")
+            logger.error(f"[ERROR]  curl_cffi exception: {e}")
 
         # If we reach here, both failed
-        logger.error(f"❌ All API credit checks failed!")
+        logger.error(f"[ERROR]  All API credit checks failed!")
         logger.error(f"   Token: {self.latest_access_token[:50] if self.latest_access_token else 'None'}...")
         logger.error(f"   Cookies: {len(cookie_dict)} total, {len(expired_cookies)} expired")
         return {"error": "All API checks failed", "error_code": "ALL_FAILED"}
@@ -582,7 +583,7 @@ class SoraDriver(BaseDriver):
             Empty list [] means all videos are complete.
         """
         if not self.latest_access_token:
-            logger.warning("❌ get_pending_tasks_api failed: No access token captured.")
+            logger.warning("[ERROR]  get_pending_tasks_api failed: No access token captured.")
             return None
 
         # Use curl_cffi to bypass Cloudflare
@@ -608,24 +609,24 @@ class SoraDriver(BaseDriver):
                 data = response.json()
                 if isinstance(data, list):
                     if len(data) == 0:
-                        logger.info("✅ Pending Tasks: [] - All videos complete!")
+                        logger.info("[OK]  Pending Tasks: [] - All videos complete!")
                     else:
                         for task in data:
-                            progress = task.get('progress_pct', 0) * 100
-                            logger.info(f"📊 Task {task.get('id')}: {task.get('status')} | {progress:.1f}%")
+                            progress = (task.get('progress_pct') or 0) * 100
+                            logger.info(f"[STATS]  Task {task.get('id')}: {task.get('status')} | {progress:.1f}%")
                     return data
                 else:
                     return data # Handle if it returns dict?
                     
             elif response.status_code == 403:
                 if "Just a moment" in response.text:
-                    logger.warning("⚠️ Cloudflare blocked Pending Tasks check.")
+                    logger.warning("[WARNING]  Cloudflare blocked Pending Tasks check.")
                 else:
-                    logger.warning(f"⚠️ Pending Tasks 403: {response.text[:100]}")
+                    logger.warning(f"[WARNING]  Pending Tasks 403: {response.text[:100]}")
             
         except ImportError:
             # Fallback to aiohttp
-            logger.warning("⚠️ curl_cffi missing, falling back to aiohttp for pending tasks...")
+            logger.warning("[WARNING]  curl_cffi missing, falling back to aiohttp for pending tasks...")
             try:
                 headers = {
                     "Authorization": self.latest_access_token,
@@ -643,7 +644,53 @@ class SoraDriver(BaseDriver):
                 logger.debug(f"get_pending_tasks_api failed (aiohttp): {e}")
                 
         except Exception as e:
-            logger.error(f"❌ get_pending_tasks_api failed: {e}")
+            logger.error(f"[ERROR]  get_pending_tasks_api failed: {e}")
+            
+        return None
+        
+    async def get_drafts_api(self) -> Optional[list]:
+        """
+        Get drafts via API using curl_cffi to bypass Cloudflare.
+        """
+        if not self.latest_access_token:
+            return None
+
+        # Use curl_cffi to bypass Cloudflare
+        try:
+            from curl_cffi import requests as curl_requests
+            
+            headers = {
+                "Authorization": self.latest_access_token,
+                "Content-Type": "application/json",
+                "User-Agent": self.latest_user_agent or "Mozilla/5.0",
+                "Referer": "https://sora.chatgpt.com/profile"
+            }
+            
+            # Simple sync call (fast enough) or could use AsyncSession
+            response = curl_requests.get(
+                "https://sora.chatgpt.com/backend/project_y/profile/drafts?limit=15",
+                headers=headers,
+                impersonate="chrome",
+                timeout=15
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                items = data.get("items", data) if isinstance(data, dict) else data
+                if items:
+                    logger.debug(f"🔍 Found {len(items)} drafts via API")
+                return items
+                    
+            elif response.status_code == 403:
+                logger.warning(f"[WARNING]  Cloudflare blocked Drafts check (HTTP {response.status_code})")
+            
+        except ImportError:
+            # Fallback to aiohttp
+            logger.warning("[WARNING]  curl_cffi missing, falling back to aiohttp for drafts...")
+            return await self._api_get_drafts()
+            
+        except Exception as e:
+            logger.error(f"[ERROR]  get_drafts_api failed: {e}")
             
         return None
 
@@ -673,18 +720,18 @@ class SoraDriver(BaseDriver):
         from app.core.sentinel import get_sentinel_token
         import json
         
-        logger.info(f"🎬 Generating video via API: {prompt[:50]}...")
+        logger.info(f"[GENERATE]  Generating video via API: {prompt[:50]}...")
         
         if not self.latest_access_token:
-            logger.error("❌ No access token available")
+            logger.error("[ERROR]  No access token available")
             return {"success": False, "error": "No access token"}
         
         # Generate sentinel token
         try:
             sentinel_payload = get_sentinel_token(flow="sora_create_task")
-            logger.info(f"🔐 Generated sentinel token")
+            logger.info(f"[LOCK]  Generated sentinel token")
         except Exception as e:
-            logger.error(f"❌ Sentinel token generation failed: {e}")
+            logger.error(f"[ERROR]  Sentinel token generation failed: {e}")
             return {"success": False, "error": f"Sentinel failed: {e}"}
         
         # Build request payload
@@ -710,7 +757,17 @@ class SoraDriver(BaseDriver):
         
         # Add image attachment if provided
         if image_file_id:
-            payload["inpaint_items"] = [{"kind": "file", "file_id": image_file_id}]
+            # CLEAN ID: Strip any metadata prefix/suffix (e.g. "sentinel#file_ID#usage")
+            clean_id = image_file_id
+            if "#" in clean_id:
+                parts = clean_id.split("#")
+                for p in parts:
+                    if p.startswith("file_") or p.startswith("file-"):
+                        clean_id = p
+                        break
+            
+            logger.info(f"📎 Attaching Image: {clean_id} (Original: {image_file_id[:20]}...)")
+            payload["inpaint_items"] = [{"kind": "file", "file_id": clean_id}]
         
         # Get device ID
         if self.page:
@@ -738,6 +795,8 @@ class SoraDriver(BaseDriver):
         }
         
         try:
+            logger.info(f"[START]  GENERATE PAYLOAD: {json.dumps(payload, ensure_ascii=False)}")
+            
             if self.page:
                 # Browser mode - use page.evaluate
                 js_code = f"""
@@ -772,7 +831,7 @@ class SoraDriver(BaseDriver):
                     from curl_cffi import requests as curl_requests
                     logger.info("🔌 Using curl_cffi for headless API call (Bypassing Cloudflare)...")
                 except ImportError:
-                    logger.error("❌ curl_cffi not installed! Fallback to aiohttp (High risk of block)")
+                    logger.error("[ERROR]  curl_cffi not installed! Fallback to aiohttp (High risk of block)")
                     import aiohttp
                     curl_requests = None
 
@@ -808,7 +867,7 @@ class SoraDriver(BaseDriver):
                             result = {"status": response.status, "body": text}
             
             if result.get('status') == 200:
-                logger.info("✅ Video generation API call successful!")
+                logger.info("[OK]  Video generation API call successful!")
                 try:
                     response_data = json.loads(result['body'])
                     task_id = response_data.get('id') or response_data.get('task_id')
@@ -818,13 +877,13 @@ class SoraDriver(BaseDriver):
             else:
                 error_msg = result.get('body', result.get('error', 'Unknown error'))
                 if 'sentinel' in str(error_msg).lower():
-                    logger.error("❌ Sentinel block - token may have expired")
+                    logger.error("[ERROR]  Sentinel block - token may have expired")
                 else:
-                    logger.error(f"❌ API error {result.get('status')}: {str(error_msg)[:200]}")
+                    logger.error(f"[ERROR]  API error {result.get('status')}: {str(error_msg)[:200]}")
                 return {"success": False, "error": error_msg}
                 
         except Exception as e:
-            logger.error(f"❌ generate_video_api exception: {e}")
+            logger.error(f"[ERROR]  generate_video_api exception: {e}")
             return {"success": False, "error": str(e)}
 
     async def upload_image_api(self, image_path: str) -> dict:
@@ -887,31 +946,84 @@ class SoraDriver(BaseDriver):
                 result = await self.page.evaluate(js_code)
             else:
                 # API-only mode
-                import aiohttp
-                
-                async with aiohttp.ClientSession() as session:
-                    data = aiohttp.FormData()
-                    data.add_field('file',
-                                   open(image_path, 'rb'),
-                                   filename=filename,
-                                   content_type=mime_type)
-                                   
+                use_curl = False
+                try:
+                    from curl_cffi import requests as curl_requests
+                    use_curl = True
+                except ImportError:
+                    pass
+
+                if use_curl:
+                    # Use curl_cffi (Stronger bypass)
+                    cookie_str = ""
+                    if hasattr(self, 'cookies') and self.cookies:
+                        cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in self.cookies])
+
                     headers = {
                         "Authorization": self.latest_access_token,
-                        "User-Agent": self.latest_user_agent or "Mozilla/5.0"
+                        "User-Agent": self.latest_user_agent or "Mozilla/5.0",
+                        "Cookie": cookie_str,
+                        "Origin": "https://sora.chatgpt.com",
+                        "Referer": "https://sora.chatgpt.com/"
                     }
                     
-                    async with session.post(
-                        "https://sora.chatgpt.com/backend/project_y/file/upload",
-                        headers=headers,
-                        data=data
-                    ) as response:
-                        text = await response.text()
-                        result = {"status": response.status, "body": text}
+                    try:
+                        import urllib3
+                        with open(image_path, 'rb') as f:
+                            file_content = f.read()
+                            
+                        # Manual Multipart Encoding
+                        # fields = {'name': (filename, data, content_type)}
+                        fields = {
+                            'file': (filename, file_content, mime_type)
+                        }
+                        
+                        body, content_type = urllib3.encode_multipart_formdata(fields)
+                        headers["Content-Type"] = content_type
+                        
+                        logger.info(f"🔌 Uploading with curl_cffi (Manual Multipart)...")
+                        # payload must be passed as 'data' (bytes)
+                        response = curl_requests.post(
+                            "https://sora.chatgpt.com/backend/project_y/file/upload",
+                            headers=headers,
+                            data=body,
+                            impersonate="chrome",
+                            timeout=60
+                        )
+                        result = {"status": response.status_code, "body": response.text}
+                    except Exception as e:
+                        logger.error(f"[ERROR]  curl_cffi upload failed: {e}", exc_info=True)
+                        result = {"status": 0, "error": str(e)}
+
+                else:
+                    # Fallback to aiohttp (Weaker)
+                    import aiohttp
+                    async with aiohttp.ClientSession() as session:
+                        data = aiohttp.FormData()
+                        data.add_field('file',
+                                       open(image_path, 'rb'),
+                                       filename=filename,
+                                       content_type=mime_type)
+                        
+                        # Note: formatting cookies for aiohttp manual header if needed, 
+                        # but aiohttp usually prefers cookie_jar. 
+                        # For now, let's just stick to Authorization since curl is primary.
+                        headers = {
+                            "Authorization": self.latest_access_token,
+                            "User-Agent": self.latest_user_agent or "Mozilla/5.0"
+                        }
+                        
+                        async with session.post(
+                            "https://sora.chatgpt.com/backend/project_y/file/upload",
+                            headers=headers,
+                            data=data
+                        ) as response:
+                            text = await response.text()
+                            result = {"status": response.status, "body": text}
             
             if result.get('status') == 200:
                 data = json.loads(result['body'])
-                logger.info(f"✅ Image uploaded: file_id={data.get('file_id', 'unknown')[:30]}...")
+                logger.info(f"[OK]  Image uploaded: file_id={data.get('file_id', 'unknown')[:30]}...")
                 return {
                     "success": True,
                     "file_id": data.get('file_id'),
@@ -922,7 +1034,7 @@ class SoraDriver(BaseDriver):
                 return {"success": False, "error": result.get('body', result.get('error'))}
                 
         except Exception as e:
-            logger.error(f"❌ upload_image_api exception: {e}")
+            logger.error(f"[ERROR]  upload_image_api exception: {e}")
             return {"success": False, "error": str(e)}
 
     async def get_drafts_api(self) -> list:
@@ -953,14 +1065,14 @@ class SoraDriver(BaseDriver):
             if response.status_code == 200:
                 data = response.json()
                 drafts = data.get('items', data) if isinstance(data, dict) else data
-                logger.info(f"✅ Drafts API: Retrieved {len(drafts)} drafts (curl_cffi)")
+                logger.info(f"[OK]  Drafts API: Retrieved {len(drafts)} drafts (curl_cffi)")
                 return drafts
             else:
-                logger.warning(f"⚠️ Drafts API failed ({response.status_code}): {response.text[:100]}")
+                logger.warning(f"[WARNING]  Drafts API failed ({response.status_code}): {response.text[:100]}")
                 
         except ImportError:
             # Fallback to aiohttp
-            logger.warning("⚠️ curl_cffi missing, falling back to aiohttp for drafts...")
+            logger.warning("[WARNING]  curl_cffi missing, falling back to aiohttp for drafts...")
             try:
                 headers = {
                     "Authorization": self.latest_access_token,
@@ -975,13 +1087,13 @@ class SoraDriver(BaseDriver):
                         if response.status == 200:
                             data = await response.json()
                             drafts = data.get('items', data) if isinstance(data, dict) else data
-                            logger.info(f"✅ Drafts API: Retrieved {len(drafts)} drafts (aiohttp)")
+                            logger.info(f"[OK]  Drafts API: Retrieved {len(drafts)} drafts (aiohttp)")
                             return drafts
             except Exception as e:
                 logger.debug(f"get_drafts_api failed (aiohttp): {e}")
 
         except Exception as e:
-            logger.error(f"❌ get_drafts_api failed: {e}")
+            logger.error(f"[ERROR]  get_drafts_api failed: {e}")
 
         return None
 
@@ -1075,15 +1187,15 @@ class SoraDriver(BaseDriver):
                         
             if result.get('status') == 200:
                 data = json.loads(result['body'])
-                logger.info(f"✅ Video Published! URL: {data.get('url')}")
+                logger.info(f"[OK]  Video Published! URL: {data.get('url')}")
                 return {"success": True, "post_id": data.get('id'), "url": data.get('url')}
             else:
                  error_msg = result.get('body', result.get('error'))
-                 logger.error(f"❌ Post API failed: {error_msg}")
+                 logger.error(f"[ERROR]  Post API failed: {error_msg}")
                  return {"success": False, "error": error_msg}
 
         except Exception as e:
-            logger.error(f"❌ post_video_api exception: {e}")
+            logger.error(f"[ERROR]  post_video_api exception: {e}")
             return {"success": False, "error": str(e)}
 
     async def verify_identity(self, expected_email: str) -> bool:
@@ -1123,13 +1235,13 @@ class SoraDriver(BaseDriver):
                 logger.info(f"   👤 Current Session Email: {actual_email}")
                 
                 if actual_email and actual_email.lower().strip() == expected_email.lower().strip():
-                    logger.info("✅ Identity Verified.")
+                    logger.info("[OK]  Identity Verified.")
                     return True
                 else:
-                    logger.error(f"❌ IDENTITY MISMATCH! Expected: {expected_email} | Found: {actual_email}")
+                    logger.error(f"[ERROR]  IDENTITY MISMATCH! Expected: {expected_email} | Found: {actual_email}")
                     return False
             else:
-                logger.warning(f"⚠️ Identity check failed (API {result['status']}). Assuming safe if logged in.")
+                logger.warning(f"[WARNING]  Identity check failed (API {result['status']}). Assuming safe if logged in.")
                 # If API fails, we can't verify. 
                 # Strict mode: Return False? 
                 # Lenient mode: Return True (don't block operation if API is flakey)
@@ -1151,7 +1263,7 @@ class SoraDriver(BaseDriver):
             is_valid_identity = await self.verify_identity(email)
             if not is_valid_identity:
                 logger.error("🚨 CRITICAL: Session Identity Mismatch! Expected different user.")
-                logger.warning("🧹 Force Check-out (Clearing Cookies) to prevent cross-account contamination...")
+                logger.warning("[CLEANUP]  Force Check-out (Clearing Cookies) to prevent cross-account contamination...")
                 
                 # Force Logout
                 try:
@@ -1163,7 +1275,7 @@ class SoraDriver(BaseDriver):
         
         # Wait a bit for traffic to generate token if needed
         if not self.latest_access_token:
-             logger.info("⏳ Waiting 5s for token capture after login...")
+             logger.info("[WAIT]  Waiting 5s for token capture after login...")
              await asyncio.sleep(5)
         
         return await self.context.cookies()

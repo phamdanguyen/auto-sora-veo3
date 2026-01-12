@@ -67,11 +67,11 @@ async def process_url_resolution(job_id: int):
         gen_status = state.get("tasks", {}).get("generate", {}).get("status")
         if gen_status != "completed":
             # Process not ready yet, even if status is 'processing'
-            # logger.debug(f"⏳ [Resolve] Job #{job.id} waiting for generation (Status: {gen_status})") 
+            # logger.debug(f"[WAIT]  [Resolve] Job #{job.id} waiting for generation (Status: {gen_status})") 
             return
 
         if state.get("resolution_retries", 0) >= 3:
-            logger.error(f"❌ [Resolve] Job #{job.id} failed after 3 retries.")
+            logger.error(f"[ERROR]  [Resolve] Job #{job.id} failed after 3 retries.")
             job.status = "failed"
             job.error_message = "Failed to resolve URL after 3 attempts"
             db.commit()
@@ -80,7 +80,7 @@ async def process_url_resolution(job_id: int):
         logger.info(f"🔍 [Resolve] Processing Job #{job.id} (Attempt {state.get('resolution_retries', 0) + 1}/3)...")
         
         if not job.account_id:
-            logger.error(f"❌ [Resolve] Job #{job.id} has no linked Account ID. Cannot resolve.")
+            logger.error(f"[ERROR]  [Resolve] Job #{job.id} has no linked Account ID. Cannot resolve.")
             job.status = "failed"
             job.error_message = "Missing Account Linkage (Generation failed before assignment?)"
             db.commit()
@@ -88,7 +88,7 @@ async def process_url_resolution(job_id: int):
 
         account = db.query(models.Account).filter(models.Account.id == job.account_id).first()
         if not account:
-            logger.error(f"❌ [Resolve] Linked Account #{job.account_id} not found in DB.")
+            logger.error(f"[ERROR]  [Resolve] Linked Account #{job.account_id} not found in DB.")
             return
 
         # Start Driver with Account Lock to prevent conflict with Generation Worker
@@ -108,14 +108,14 @@ async def process_url_resolution(job_id: int):
                 
                 # Check Status & Post if needed
                 status = await driver.check_video_status_v2()
-                logger.info(f"📊 [Resolve] Job #{job.id} Status: {status}")
+                logger.info(f"[STATS]  [Resolve] Job #{job.id} Status: {status}")
                 
                 if status == "draft" or status == "completed":
                     # Combined Logic: Whether Draft or Completed, we try to download directly.
                     # If Draft: We need to click the DRAFT_ITEM
                     # If Completed: We need to click the GRID_ITEM (usually in Profile)
                     
-                    logger.info(f"⬇️ [Resolve] Job #{job.id} is {status}. Proceeding to download...")
+                    logger.info(f"[DOWNLOAD]  [Resolve] Job #{job.id} is {status}. Proceeding to download...")
                     # Capture Video ID (Consistency)
                     if not job.video_id:
                          vid = await driver.extract_video_id()
@@ -127,7 +127,7 @@ async def process_url_resolution(job_id: int):
                     # ⚡ TRY DIRECT DOWNLOAD FIRST (Authenticated)
                     # Bypasses "Share" button issues and "Public Link" 403s
                     try:
-                        logger.info("⬇️ [Resolve] Attempting direct download (Authenticated)...")
+                        logger.info("[DOWNLOAD]  [Resolve] Attempting direct download (Authenticated)...")
                         
                         # Open Detail View (Click first grid item)
                         # We assume check_video_status left us on Profile/Drafts with items visible
@@ -174,16 +174,16 @@ async def process_url_resolution(job_id: int):
                                             
                                             # Check match
                                             if p_job in p_ui or p_ui in p_job:
-                                                 logger.info("✅ Prompt verified matches.")
+                                                 logger.info("[OK]  Prompt verified matches.")
                                                  is_match = True
                                             else:
-                                                 logger.warning(f"⚠️ Mismatch! Job: '{p_job[:30]}...' vs UI: '{p_ui[:30]}...'")
+                                                 logger.warning(f"[WARNING]  Mismatch! Job: '{p_job[:30]}...' vs UI: '{p_ui[:30]}...'")
                                         else:
-                                            logger.warning("⚠️ Prompt element empty.")
+                                            logger.warning("[WARNING]  Prompt element empty.")
                                     else:
-                                         logger.warning("⚠️ Could not find prompt element.")
+                                         logger.warning("[WARNING]  Could not find prompt element.")
                                 except Exception as e:
-                                    logger.warning(f"⚠️ Error verifying prompt: {e}")
+                                    logger.warning(f"[WARNING]  Error verifying prompt: {e}")
 
                                 if is_match:
                                     found_match = True
@@ -213,11 +213,11 @@ async def process_url_resolution(job_id: int):
                                     job.task_state = json.dumps(state)
                                     
                                     db.commit()
-                                    logger.info(f"✅ [Resolve] Iterative Search Success! Job #{job.id}: {web_path}")
+                                    logger.info(f"[OK]  [Resolve] Iterative Search Success! Job #{job.id}: {web_path}")
                                     return # Done! (Break out of function)
                                 else:
                                     # PROMPT MISMATCH -> Close and Continue
-                                    logger.info("❌ Not a match. Closing detail view...")
+                                    logger.info("[ERROR]  Not a match. Closing detail view...")
                                     
                                     # Find Close Button
                                     close_btn = None
@@ -229,11 +229,11 @@ async def process_url_resolution(job_id: int):
                                         await close_btn.click()
                                         await asyncio.sleep(1) # Wait for grid to restore
                                     else:
-                                        logger.warning("⚠️ Could not find Close button! Cannot continue search.")
+                                        logger.warning("[WARNING]  Could not find Close button! Cannot continue search.")
                                         break # Fail safe
                             
                             except Exception as item_err:
-                                logger.error(f"⚠️ Error checking item {i}: {item_err}")
+                                logger.error(f"[WARNING]  Error checking item {i}: {item_err}")
                                 # Try to recover (close modal if open)
                                 try:
                                     await driver.page.keyboard.press("Escape")
@@ -243,7 +243,7 @@ async def process_url_resolution(job_id: int):
                                 continue
 
                         if not found_match:
-                             logger.error(f"🛑 Verification Failed: No video found matching prompt after checking {len(items)} items.")
+                             logger.error(f"[STOP]  Verification Failed: No video found matching prompt after checking {len(items)} items.")
                              job.status = "failed"
                              job.error_message = "Video not found matching prompt."
                              db.commit()
@@ -252,17 +252,17 @@ async def process_url_resolution(job_id: int):
                     except Exception as direct_err:
                         # CRITICAL FIX: If Prompt Mismatch, do NOT fallback. Fail hard.
                         if "Prompt mismatch" in str(direct_err):
-                             logger.error(f"🛑 Verification Failed: {direct_err}")
+                             logger.error(f"[STOP]  Verification Failed: {direct_err}")
                              
                              # Fail the job immediately to prevent infinite retries
                              job.status = "failed"
                              job.error_message = str(direct_err)
                              db.commit()
-                             logger.info(f"❌ Job #{job.id} marked as FAILED due to prompt mismatch.")
+                             logger.info(f"[ERROR]  Job #{job.id} marked as FAILED due to prompt mismatch.")
                              return # Stop processing this job
 
-                        logger.warning(f"⚠️ [Resolve] Direct download failed: {direct_err}")
-                        logger.error("🛑 ALL Download methods failed (3rd party fallback disabled).")
+                        logger.warning(f"[WARNING]  [Resolve] Direct download failed: {direct_err}")
+                        logger.error("[STOP]  ALL Download methods failed (3rd party fallback disabled).")
                         
                         # Fail the job if Direct Download fails (since iter check covers all items)
                         job.status = "failed"
@@ -288,7 +288,7 @@ async def process_url_resolution(job_id: int):
 
                      # If generating, we don't count as retry (just wait)
                      if status == "unknown":
-                         logger.warning(f"⚠️ [Resolve] Job #{job.id} video not found.")
+                         logger.warning(f"[WARNING]  [Resolve] Job #{job.id} video not found.")
                          await update_task_state(db, job.id, {"resolution_retries": state.get("resolution_retries", 0) + 1})
              finally:
                  if driver:
@@ -297,7 +297,7 @@ async def process_url_resolution(job_id: int):
 
     
     except Exception as e:
-        logger.error(f"❌ [Resolve] Error Job #{job_id}: {e}")
+        logger.error(f"[ERROR]  [Resolve] Error Job #{job_id}: {e}")
         try:
             await update_task_state(db, job_id, {"resolution_retries": state.get("resolution_retries", 0) + 1})
         except:
@@ -325,20 +325,20 @@ async def process_file_download(job_id: int):
         gen_status = state.get("tasks", {}).get("generate", {}).get("status")
         if gen_status != "completed":
             # Video not ready yet - still generating
-            logger.info(f"⏳ [Download] Job #{job.id} waiting for generation to complete (gen_status={gen_status})")
+            logger.info(f"[WAIT]  [Download] Job #{job.id} waiting for generation to complete (gen_status={gen_status})")
             return
         
         if state.get("download_retries", 0) >= 3:
-            logger.error(f"❌ [Download] Job #{job.id} failed after 3 retries.")
+            logger.error(f"[ERROR]  [Download] Job #{job.id} failed after 3 retries.")
             job.status = "failed"
             job.error_message = "Failed to download file after 3 attempts"
             db.commit()
             return
 
-        logger.info(f"⬇️ [Download] Processing Job #{job.id} (Attempt {state.get('download_retries', 0) + 1}/3)")
+        logger.info(f"[DOWNLOAD]  [Download] Processing Job #{job.id} (Attempt {state.get('download_retries', 0) + 1}/3)")
         
         if not job.account_id:
-            logger.error(f"❌ [Download] Job #{job.id} has no linked Account. Cannot download.")
+            logger.error(f"[ERROR]  [Download] Job #{job.id} has no linked Account. Cannot download.")
             job.status = "failed"
             job.error_message = "Missing Account Linkage"
             db.commit()
@@ -346,7 +346,7 @@ async def process_file_download(job_id: int):
 
         account = db.query(models.Account).filter(models.Account.id == job.account_id).first()
         if not account:
-            logger.error(f"❌ [Download] Linked Account #{job.account_id} not found.")
+            logger.error(f"[ERROR]  [Download] Linked Account #{job.account_id} not found.")
             return
 
         # Start Driver with Account Lock
@@ -366,7 +366,7 @@ async def process_file_download(job_id: int):
                 
                 # Check Status
                 status = await driver.check_video_status_v2()
-                logger.info(f"📊 [Download] Job #{job.id} Status: {status}")
+                logger.info(f"[STATS]  [Download] Job #{job.id} Status: {status}")
                 
                 if status == "draft" or status == "completed":
                     # --- ITERATIVE SEARCH LOGIC ---
@@ -402,12 +402,12 @@ async def process_file_download(job_id: int):
                                         p_job = job.prompt.lower().strip()
                                         p_ui = ui_prompt.strip().lower()
                                         if p_job in p_ui or p_ui in p_job:
-                                            logger.info("✅ Prompt verified matches.")
+                                            logger.info("[OK]  Prompt verified matches.")
                                             is_match = True
                                         else:
-                                            logger.warning(f"⚠️ Mismatch! Job: '{p_job[:30]}...' vs UI: '{p_ui[:30]}...'")
+                                            logger.warning(f"[WARNING]  Mismatch! Job: '{p_job[:30]}...' vs UI: '{p_ui[:30]}...'")
                             except Exception as e:
-                                logger.warning(f"⚠️ Error verifying prompt: {e}")
+                                logger.warning(f"[WARNING]  Error verifying prompt: {e}")
                             
                             if is_match:
                                 found_match = True
@@ -431,7 +431,7 @@ async def process_file_download(job_id: int):
                                 
                                 db.commit()
                                 
-                                logger.info(f"✅ [Download] Complete Job #{job.id}: {web_path}")
+                                logger.info(f"[OK]  [Download] Complete Job #{job.id}: {web_path}")
                                 return
                             else:
                                 # Close detail view
@@ -444,10 +444,10 @@ async def process_file_download(job_id: int):
                                     await close_btn.click()
                                     await asyncio.sleep(1)
                                 else:
-                                    logger.warning("⚠️ Could not find Close button!")
+                                    logger.warning("[WARNING]  Could not find Close button!")
                                     break
                         except Exception as item_err:
-                            logger.error(f"⚠️ Error checking item {i}: {item_err}")
+                            logger.error(f"[WARNING]  Error checking item {i}: {item_err}")
                             try:
                                 await driver.page.keyboard.press("Escape")
                                 await asyncio.sleep(1)
@@ -456,14 +456,14 @@ async def process_file_download(job_id: int):
                             continue
                     
                     if not found_match:
-                        logger.error(f"🛑 No video found matching prompt after checking {len(items)} items.")
+                        logger.error(f"[STOP]  No video found matching prompt after checking {len(items)} items.")
                         state["download_retries"] = state.get("download_retries", 0) + 1
                         await update_task_state(db, job.id, state)
                 else:
-                    logger.warning(f"⚠️ [Download] Video not ready yet (Status: {status})")
+                    logger.warning(f"[WARNING]  [Download] Video not ready yet (Status: {status})")
                     
             except Exception as e:
-                logger.error(f"❌ [Download] Failed: {e}")
+                logger.error(f"[ERROR]  [Download] Failed: {e}")
                 state["download_retries"] = state.get("download_retries", 0) + 1
                 await update_task_state(db, job.id, state)
             finally:
@@ -471,12 +471,12 @@ async def process_file_download(job_id: int):
                     await driver.browser.close()
                     
     except Exception as e:
-        logger.error(f"❌ [Download] Wrapper Error Job #{job_id}: {e}")
+        logger.error(f"[ERROR]  [Download] Wrapper Error Job #{job_id}: {e}")
     finally:
         db.close()
 
 async def scan_and_process():
-    logger.info("📡 Split-Worker Scanner Started")
+    logger.info("[POLL]  Split-Worker Scanner Started")
     while True:
         try:
             db = database.SessionLocal()
@@ -510,7 +510,7 @@ async def scan_and_process():
                  tasks.append(_safe_run(_download_semaphore, process_file_download, job.id))
             
             if tasks:
-                logger.info(f"🚀 Dispatching {len(tasks)} tasks...")
+                logger.info(f"[START]  Dispatching {len(tasks)} tasks...")
                 await asyncio.gather(*tasks)
             
             await asyncio.sleep(10)
@@ -526,7 +526,7 @@ async def _safe_run(semaphore, func, *args):
 async def start_worker():
     # DEPRECATED: Download now happens in worker_v2 sequential flow
     # Keeping this function for backward compatibility / manual retry
-    logger.info("⚠️ worker_download.start_worker() called but disabled. Download now in worker_v2.")
+    logger.info("[WARNING]  worker_download.start_worker() called but disabled. Download now in worker_v2.")
     # await scan_and_process()
     pass
 

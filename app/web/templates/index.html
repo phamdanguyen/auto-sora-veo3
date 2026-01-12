@@ -34,7 +34,7 @@
                     class="block p-3 rounded transition-colors duration-200">Jobs Queue</a>
                 <a href="#" @click="currentTab = 'history'; fetchJobs()"
                     :class="{'bg-blue-600': currentTab === 'history', 'hover:bg-gray-700': currentTab !== 'history'}"
-                    class="block p-3 rounded transition-colors duration-200">History</a>
+                    class="block p-3 rounded transition-colors duration-200">Job Complete</a>
             </nav>
             <div class="p-4 text-sm text-gray-500 border-t border-gray-700">v1.1.0</div>
         </div>
@@ -48,19 +48,23 @@
                     <h2 class="text-3xl font-bold text-gray-800">Dashboard</h2>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="bg-white p-6 rounded-lg shadow-md border-l-4 border-blue-500">
+                    <div @click="currentTab = 'accounts'"
+                        class="bg-white p-6 rounded-lg shadow-md border-l-4 border-blue-500 cursor-pointer hover:shadow-lg transition-shadow">
                         <div class="text-gray-500 font-medium">Active Accounts</div>
                         <div class="text-4xl font-bold text-gray-800 mt-2" x-text="stats.activeAccounts">0</div>
                     </div>
-                    <div class="bg-white p-6 rounded-lg shadow-md border-l-4 border-yellow-500">
+                    <div @click="currentTab = 'jobs'; fetchJobs()"
+                        class="bg-white p-6 rounded-lg shadow-md border-l-4 border-yellow-500 cursor-pointer hover:shadow-lg transition-shadow">
                         <div class="text-gray-500 font-medium">Pending Jobs</div>
                         <div class="text-4xl font-bold text-gray-800 mt-2" x-text="stats.pendingJobs">0</div>
                     </div>
-                    <div class="bg-white p-6 rounded-lg shadow-md border-l-4 border-green-500">
+                    <div @click="currentTab = 'history'; fetchJobs()"
+                        class="bg-white p-6 rounded-lg shadow-md border-l-4 border-green-500 cursor-pointer hover:shadow-lg transition-shadow">
                         <div class="text-gray-500 font-medium">Videos Created</div>
                         <div class="text-4xl font-bold text-gray-800 mt-2" x-text="stats.completedJobs">0</div>
                     </div>
-                    <div class="bg-white p-6 rounded-lg shadow-md border-l-4 border-indigo-500">
+                    <div @click="currentTab = 'jobs'; fetchJobs()"
+                        class="bg-white p-6 rounded-lg shadow-md border-l-4 border-indigo-500 cursor-pointer hover:shadow-lg transition-shadow">
                         <div class="text-gray-500 font-medium">Processing</div>
                         <!-- active jobs = processing + sent_prompt + generating + download -->
                         <div class="text-4xl font-bold text-gray-800 mt-2"
@@ -188,7 +192,7 @@
                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                     <div class="flex items-center space-x-4">
                         <h2 class="text-3xl font-bold text-gray-800"
-                            x-text="currentTab === 'history' ? 'Job History' : 'Jobs Queue'"></h2>
+                            x-text="currentTab === 'history' ? 'Job Complete' : 'Jobs Queue'"></h2>
 
                         <!-- System Control Panel -->
                         <div class="flex items-center bg-white rounded-lg shadow-sm border border-gray-200 p-1.5 space-x-3"
@@ -294,28 +298,7 @@
 
                         <!-- Global Actions (Always Visible) -->
                         <div class="flex space-x-2 mr-2">
-                            <button @click="bulkAction('start_all')"
-                                class="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-sm shadow flex items-center"
-                                title="Start all draft/pending jobs">
-                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z">
-                                    </path>
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
-                                Start All
-                            </button>
-                            <button @click="bulkAction('retry_failed')"
-                                class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm shadow flex items-center"
-                                title="Retry all failed jobs">
-                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
-                                    </path>
-                                </svg>
-                                Retry All
-                            </button>
+
                             <button @click="bulkAction('delete_all')"
                                 class="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-sm shadow flex items-center"
                                 title="Delete all jobs">
@@ -356,8 +339,10 @@
                                         class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
                                 </th>
                                 <th class="p-4 w-16">ID</th>
+                                <th class="p-4 w-32">Task ID</th>
                                 <th class="p-4">Account</th>
                                 <th class="p-4 w-1/2">Prompt</th>
+                                <th class="p-4">Image</th>
                                 <th class="p-4">Status</th>
                                 <th class="p-4 text-right">Path</th>
                                 <th class="p-4 text-right">Actions</th>
@@ -374,12 +359,17 @@
                                     </td>
                                     <td class="p-4 text-gray-500">
                                         <div class="font-bold text-gray-900" x-text="'#' + job.id"></div>
+                                    </td>
+                                    <td class="p-4">
                                         <template x-if="job.video_id">
-                                            <div class="text-[10px] text-gray-400 font-mono mt-1 cursor-pointer hover:text-blue-600 truncate max-w-[80px]"
-                                                @click.stop="navigator.clipboard.writeText(job.video_id); $el.innerText = 'Copied!'"
-                                                @mouseleave="$el.innerText = job.video_id.substring(0, 8) + '...'"
-                                                x-text="job.video_id.substring(0, 8) + '...'"
-                                                title="Click to copy Video ID"></div>
+                                            <div class="text-xs font-mono text-gray-600 cursor-pointer hover:text-blue-600 truncate max-w-[120px]"
+                                                @click.stop="navigator.clipboard.writeText(job.video_id); showToast('Copied Task ID!', 'success')"
+                                                title="Click to copy">
+                                                <span x-text="job.video_id"></span>
+                                            </div>
+                                        </template>
+                                        <template x-if="!job.video_id">
+                                            <span class="text-xs text-gray-400">-</span>
                                         </template>
                                     </td>
                                     <td class="p-4">
@@ -398,10 +388,20 @@
                                         </div>
                                     </td>
                                     <td class="p-4">
-                                        <div class="text-sm text-gray-900" x-text="job.prompt">
-                                        </div>
+                                        <div class="text-sm text-gray-900" x-text="job.prompt"></div>
                                         <div class="text-xs text-gray-500 mt-1"
                                             x-text="job.duration + 's | ' + job.aspect_ratio"></div>
+                                    </td>
+                                    <td class="p-4">
+                                        <template x-if="job.image_path">
+                                            <a :href="'file:///' + job.image_path.replace(/\\/g, '/')" target="_blank"
+                                                class="text-blue-600 hover:text-blue-800 text-sm underline truncate block max-w-[100px]"
+                                                x-text="job.image_path.split(/[\\/]/).pop()">
+                                            </a>
+                                        </template>
+                                        <template x-if="!job.image_path">
+                                            <span class="text-xs text-gray-300">-</span>
+                                        </template>
                                     </td>
                                     <td class="p-4">
                                         <span :class="{
@@ -455,7 +455,8 @@
                                     <td class="p-4 text-right">
                                         <div class="flex items-center justify-end space-x-1">
                                             <!-- Start (Draft/Pending) -->
-                                            <button x-show="['draft', 'pending'].includes(job.status)"
+                                            <button
+                                                x-show="['draft', 'pending'].includes(job.status) && currentTab !== 'history'"
                                                 @click.stop="batchAction('start_selected', [job.id])"
                                                 class="text-green-600 hover:text-green-800 p-1.5 rounded hover:bg-green-50 transition"
                                                 title="Start">
@@ -472,7 +473,7 @@
 
                                             <!-- Retry (Failed only) -->
                                             <button
-                                                x-show="['failed', 'cancelled', 'completed', 'done'].includes(job.status)"
+                                                x-show="['failed', 'cancelled'].includes(job.status) && currentTab !== 'history'"
                                                 @click.stop="batchAction('retry_selected', [job.id])"
                                                 class="text-blue-600 hover:text-blue-800 p-1.5 rounded hover:bg-blue-50 transition"
                                                 title="Retry">
@@ -500,8 +501,21 @@
                                                 </svg>
                                             </button>
 
+                                            <!-- Duplicate -->
+                                            <button @click.stop="duplicateJob(job)"
+                                                class="text-gray-600 hover:text-gray-900 p-1.5 rounded hover:bg-gray-50 transition"
+                                                title="Duplicate">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor"
+                                                    viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                                        stroke-width="2"
+                                                        d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2">
+                                                    </path>
+                                                </svg>
+                                            </button>
+
                                             <!-- Edit -->
-                                            <button @click.stop="openEditModal(job)"
+                                            <button @click.stop="openEditModal(job)" x-show="currentTab !== 'history'"
                                                 class="text-indigo-600 hover:text-indigo-900 p-1.5 rounded hover:bg-indigo-50 transition"
                                                 title="Edit">
                                                 <svg class="w-5 h-5" fill="none" stroke="currentColor"
@@ -577,6 +591,38 @@
                                     </select>
                                 </div>
                             </div>
+
+                            <!-- Image Upload for Edit -->
+                            <div class="mt-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Upload Image (Changes
+                                    Request)</label>
+
+                                <div class="flex items-center space-x-2" x-show="editingJob.image_path">
+                                    <span class="text-xs text-green-600 font-medium">Currently attached: <span
+                                            x-text="editingJob.image_path.split(/[\\/]/).pop()"></span></span>
+                                    <button @click="editingJob.image_path = null"
+                                        class="text-red-500 text-xs hover:underline">Remove</button>
+                                </div>
+
+                                <input type="file" @change="async (e) => {
+                                    /* Reuse upload logic but set editingJob.image_path */
+                                     const file = e.target.files[0];
+                                     if (!file) return;
+                                     const formData = new FormData();
+                                     formData.append('file', file);
+                                     try {
+                                         const res = await fetch('/api/jobs/upload', { method: 'POST', body: formData });
+                                         if(res.ok) {
+                                             const data = await res.json();
+                                             editingJob.image_path = data.path;
+                                             // No global toast here, maybe local indication?
+                                             alert('Image attached!');
+                                         } else { alert('Upload failed'); }
+                                     } catch(err) { alert('Error: ' + err); }
+                                     e.target.value = '';
+                                }" accept="image/*"
+                                    class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                            </div>
                         </div>
                     </template>
 
@@ -647,18 +693,17 @@
                     </div>
                 </div>
 
-                <!-- Login Mode -->
+                <!-- Image Upload (Optional) -->
                 <div class="mt-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Login Mode</label>
-                    <select x-model="newJob.login_mode"
-                        class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500">
-                        <option value="auto">Auto Login (Default)</option>
-                        <option value="manual">Manual Login (Wait for user)</option>
-                    </select>
-                    <p class="text-xs text-gray-500 mt-1" x-show="newJob.login_mode === 'manual'">
-                        Browser will open and wait up to 5 minutes for you to login manually.
-                    </p>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Upload Image (Optional)</label>
+                    <input type="file" @change="handleFileUpload($event)" accept="image/*"
+                        class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    <p class="text-xs text-gray-500 mt-1" x-show="uploadingImage">Uploading...</p>
+                    <p class="text-xs text-green-600 mt-1" x-show="newJob.image_path">Image attached successfully ✅</p>
                 </div>
+
+
+                <!-- Login Mode REMOVED -->
                 <!-- Quantity Field -->
                 <div class="mt-4">
                     <label class="block text-sm font-medium text-gray-700 mb-1">Quantity (Copies)</label>
@@ -801,10 +846,42 @@
                 systemStatus: { paused: false, queue_info: {}, active_jobs: [] },
                 stats: { activeAccounts: 0, pendingJobs: 0, completedJobs: 0 },
                 newAccount: { platform: 'sora', email: '', password: '', proxy: '' },
-                newJob: { prompt: '', duration: '5', aspect_ratio: '16:9', quantity: 1, login_mode: 'auto' },
+                newJob: { prompt: '', duration: '5', aspect_ratio: '16:9', quantity: 1, image_path: null },
                 refreshingAccounts: false,
                 checkingCredits: false,
+                uploadingImage: false,
                 toast: { show: false, message: '', type: 'success' },
+
+                async handleFileUpload(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+
+                    this.uploadingImage = true;
+                    const formData = new FormData();
+                    formData.append('file', file);
+
+                    try {
+                        const response = await fetch('/api/jobs/upload', {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        if (response.ok) {
+                            const data = await response.json();
+                            this.newJob.image_path = data.path;
+                            this.showToast('Image uploaded successfully', 'success');
+                        } else {
+                            this.showToast('Upload failed', 'error');
+                            event.target.value = ''; // Reset input
+                        }
+                    } catch (e) {
+                        console.error('Upload Error:', e);
+                        this.showToast('Upload error: ' + e.message, 'error');
+                        event.target.value = '';
+                    } finally {
+                        this.uploadingImage = false;
+                    }
+                },
 
                 showToast(message, type = 'success') {
                     this.toast.message = message;
@@ -946,7 +1023,10 @@
                 async fetchAccounts() {
                     const res = await fetch('/api/accounts/');
                     this.accounts = await res.json();
-                    this.stats.activeAccounts = this.accounts.filter(a => a.status === 'live').length;
+                    // Count accounts with credits (no more status column)
+                    this.stats.activeAccounts = this.accounts.filter(a =>
+                        a.credits_remaining === null || a.credits_remaining > 0
+                    ).length;
                 },
 
                 async deleteAccount(id) {
@@ -1064,14 +1144,14 @@
                                 prompt: this.newJob.prompt,
                                 duration: this.newJob.duration,
                                 aspect_ratio: this.newJob.aspect_ratio,
-                                login_mode: this.newJob.login_mode
+                                image_path: this.newJob.image_path
                             })
                         });
                         // Small delay to ensure order?
                     }
 
                     this.showAddJobModal = false;
-                    this.newJob = { prompt: '', duration: '5', aspect_ratio: '16:9', quantity: 1 };
+                    this.newJob = { prompt: '', duration: '5', aspect_ratio: '16:9', quantity: 1, image_path: null };
                     this.fetchJobs();
                     this.currentTab = 'jobs';
                 },
@@ -1085,6 +1165,35 @@
                     await fetch(`/api/jobs/${id}`, { method: 'DELETE' });
                     this.fetchJobs();
                     if (this.selectedJob && this.selectedJob.id === id) this.selectedJob = null;
+                },
+
+                async duplicateJob(job) {
+                    // Quick duplicate
+                    // Confirmation removed as per user request
+
+                    try {
+                        await fetch('/api/jobs/', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                prompt: job.prompt,
+                                duration: job.duration || 5, // fallback
+                                aspect_ratio: job.aspect_ratio || "16:9",
+                                image_path: job.image_path || null
+                            })
+                        });
+
+                        this.showToast("Job duplicated!", "success");
+
+                        // Switch to Active Queue to see it
+                        if (this.currentTab === 'history') {
+                            this.currentTab = 'jobs';
+                        }
+                        this.fetchJobs();
+
+                    } catch (e) {
+                        alert("Failed to duplicate: " + e);
+                    }
                 },
 
                 async retryTask(jobId, taskType) {
@@ -1179,7 +1288,8 @@
                         body: JSON.stringify({
                             prompt: this.editingJob.prompt,
                             duration: this.editingJob.duration,
-                            aspect_ratio: this.editingJob.aspect_ratio
+                            aspect_ratio: this.editingJob.aspect_ratio,
+                            image_path: this.editingJob.image_path
                         })
                     });
                     this.editingJob = null;
@@ -1256,7 +1366,7 @@
 
                     if (data.ok) {
                         alert(`System reset complete. Reset ${data.reset_count} stuck jobs.`);
-                        this.fetchJobs();
+                        this.fetcs()
                     } else {
                         alert('System reset failed.');
                     }

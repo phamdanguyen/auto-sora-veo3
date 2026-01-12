@@ -14,7 +14,7 @@ class SoraCreationPage(BasePage):
     """
     [DEPRECATED] UI automation for Sora video creation page.
 
-    ⚠️ WARNING: This class uses Playwright UI automation and is DEPRECATED.
+    [WARNING]  WARNING: This class uses Playwright UI automation and is DEPRECATED.
     The main workflow now uses API-only methods in SoraDriver:
     - generate_video_api() for video generation
     - wait_for_completion_api() for polling
@@ -166,7 +166,7 @@ class SoraCreationPage(BasePage):
                     logger.warning("JS Injection partial fail, using fill() fallback...")
                     await el.fill(prompt)
                 
-                logger.info("✅ Prompt injected successfully.")
+                logger.info("[OK]  Prompt injected successfully.")
             except Exception as e:
                 logger.warning(f"JS Injection failed: {e}. Falling back to fill...")
                 await el.fill(prompt)
@@ -241,7 +241,7 @@ class SoraCreationPage(BasePage):
         try:
             for ind in SoraSelectors.VIDEO_GENERATING_INDICATORS:
                 if await self.page.is_visible(ind, timeout=1000):
-                    logger.info(f"✅ Found generating video indicator: {ind}")
+                    logger.info(f"[OK]  Found generating video indicator: {ind}")
                     return True
         except Exception as e:
             logger.debug(f"Generation check failed (benign): {e}")
@@ -274,7 +274,7 @@ class SoraCreationPage(BasePage):
             # User specifically requested this strategy for "Verify your phone number"
             for indicator in SoraSelectors.VERIFICATION_INDICATORS:
                 if await self.page.is_visible(indicator, timeout=500):
-                     logger.error(f"❌ FAIL FAST: Verification verification detected: {indicator}")
+                     logger.error(f"[ERROR]  FAIL FAST: Verification verification detected: {indicator}")
                      await self._snapshot("fail_fast_verification_start")
                      from ..exceptions import VerificationRequiredException
                      raise VerificationRequiredException(f"Verification required (Fail Fast): {indicator}")
@@ -296,14 +296,14 @@ class SoraCreationPage(BasePage):
                     for _ in range(5):
                         await asyncio.sleep(1)
                         if not await btn.is_visible():
-                             logger.info("✅ ENTER key success: Generate button disappeared")
+                             logger.info("[OK]  ENTER key success: Generate button disappeared")
                              return True
                         if await btn.is_disabled():
-                             logger.info("✅ ENTER key success: Generate button disabled")
+                             logger.info("[OK]  ENTER key success: Generate button disabled")
                              return True
                         btn_text = await btn.text_content()
                         if btn_text and ("generat" in btn_text.lower() or "creating" in btn_text.lower()):
-                             logger.info("✅ ENTER key success: Button text changed")
+                             logger.info("[OK]  ENTER key success: Button text changed")
                              return True
                     logger.warning("ENTER key did not trigger generation.")
                 else:
@@ -314,7 +314,7 @@ class SoraCreationPage(BasePage):
             # === FAIL FAST: Check verification after Enter ===
             for indicator in SoraSelectors.VERIFICATION_INDICATORS:
                 if await self.page.is_visible(indicator, timeout=500):
-                     logger.error(f"❌ FAIL FAST: Verification detected after Enter: {indicator}")
+                     logger.error(f"[ERROR]  FAIL FAST: Verification detected after Enter: {indicator}")
                      await self._snapshot("fail_fast_verification_enter")
                      from ..exceptions import VerificationRequiredException
                      raise VerificationRequiredException(f"Verification required (After Enter): {indicator}")
@@ -323,7 +323,7 @@ class SoraCreationPage(BasePage):
             logger.info("Falling back to Click method...")
             try:
                 if await self.check_is_generating():
-                     logger.info("✅ Generation already in progress.")
+                     logger.info("[OK]  Generation already in progress.")
                      return True
 
                 await self.handle_blocking_overlay()
@@ -338,7 +338,7 @@ class SoraCreationPage(BasePage):
                 await self._snapshot("debug_after_click")
 
                 if await self.check_is_generating():
-                     logger.info("✅ Generation confirmed.")
+                     logger.info("[OK]  Generation confirmed.")
                      return True
 
                 # Check errors (Quota/etc handled by caller primarily, but good to check)
@@ -346,12 +346,12 @@ class SoraCreationPage(BasePage):
                 # Check button state change
                 try:
                     if not await btn_current.is_visible() or await btn_current.is_disabled():
-                         logger.info("✅ Click success: Button state changed.")
+                         logger.info("[OK]  Click success: Button state changed.")
                          return True
                 except:
                     pass
 
-                logger.warning("⚠️ Click did not produce clear success indicators. Assuming success.")
+                logger.warning("[WARNING]  Click did not produce clear success indicators. Assuming success.")
                 return True
 
             except Exception as e:
@@ -379,17 +379,17 @@ class SoraCreationPage(BasePage):
                         
                         # Check button state
                         if not await btn.is_visible():
-                             logger.info("✅ ENTER key success: Generate button disappeared")
+                             logger.info("[OK]  ENTER key success: Generate button disappeared")
                              return True
                         
                         if await btn.is_disabled():
-                             logger.info("✅ ENTER key success: Generate button disabled")
+                             logger.info("[OK]  ENTER key success: Generate button disabled")
                              return True
 
                         # Check button text
                         btn_text = await btn.text_content()
                         if btn_text and ("generat" in btn_text.lower() or "creating" in btn_text.lower()):
-                             logger.info("✅ ENTER key success: Button text changed to 'Generating'")
+                             logger.info("[OK]  ENTER key success: Button text changed to 'Generating'")
                              return True
                              
                     logger.warning("ENTER key did not trigger generation (no state change).")
@@ -406,7 +406,7 @@ class SoraCreationPage(BasePage):
             try:
                 # SAFETY: Check if generation already started (from delayed Enter)
                 if await self.check_is_generating():
-                     logger.info("✅ Generation already in progress (detected indicator).")
+                     logger.info("[OK]  Generation already in progress (detected indicator).")
                      return True
 
                 # Check for overlay FIRST
@@ -425,7 +425,7 @@ class SoraCreationPage(BasePage):
                     if is_disabled:
                         # Check if already generating
                         if await self.check_is_generating():
-                             logger.info("✅ Generation confirmed (button disabled, indicators visible).")
+                             logger.info("[OK]  Generation confirmed (button disabled, indicators visible).")
                              return True
                         # Otherwise button might be disabled for other reasons, wait briefly
                         try:
@@ -446,7 +446,7 @@ class SoraCreationPage(BasePage):
 
                 # Check for success indicators
                 if await self.check_is_generating():
-                     logger.info("✅ Generation confirmed (indicator visible after click).")
+                     logger.info("[OK]  Generation confirmed (indicator visible after click).")
                      return True
 
                 # Check for errors
@@ -473,20 +473,20 @@ class SoraCreationPage(BasePage):
                     is_visible = await btn_current.is_visible()
 
                     if not is_visible or is_disabled:
-                         logger.info("✅ Click success: Button state changed (hidden or disabled).")
+                         logger.info("[OK]  Click success: Button state changed (hidden or disabled).")
                          return True
 
                     btn_text = await btn_current.text_content()
                     if btn_text and ("generat" in btn_text.lower() or "creating" in btn_text.lower()):
-                         logger.info("✅ Click success: Button text indicates generating.")
+                         logger.info("[OK]  Click success: Button text indicates generating.")
                          return True
                 except:
                     # Button detached/gone likely means success
-                    logger.info("✅ Click success: Button element detached.")
+                    logger.info("[OK]  Click success: Button element detached.")
                     return True
 
                 # If we reach here, click might have failed but avoid retry
-                logger.warning("⚠️ Click did not produce clear success indicators. Assuming success to prevent double-generation.")
+                logger.warning("[WARNING]  Click did not produce clear success indicators. Assuming success to prevent double-generation.")
                 return True
 
             except QuotaExhaustedException:
@@ -518,7 +518,7 @@ class SoraCreationPage(BasePage):
             for indicator in SoraSelectors.VIDEO_COMPLETION_INDICATORS:
                 try:
                     if await self.page.is_visible(indicator, timeout=1000):
-                        logger.info(f"✅ Video completion detected: {indicator}")
+                        logger.info(f"[OK]  Video completion detected: {indicator}")
                         return True
                 except:
                     continue
@@ -557,7 +557,7 @@ class SoraCreationPage(BasePage):
         for attempt in range(max_retries):
             # Refresh every 3 attempts (starting from attempt 3, e.g. 3, 6, 9)
             if attempt > 0 and attempt % 3 == 0:
-                 logger.info(f"🔄 Reloading page to refresh UI state (Attempt {attempt+1})...")
+                 logger.info(f"[MONITOR]  Reloading page to refresh UI state (Attempt {attempt+1})...")
                  try:
                      await self.page.reload(wait_until="domcontentloaded")
                      await asyncio.sleep(4)
@@ -668,7 +668,7 @@ class SoraCreationPage(BasePage):
                          clipboard_text = await self.page.evaluate("async () => { try { return await navigator.clipboard.readText(); } catch (e) { return null; } }")
                          if clipboard_text and "/share/" in clipboard_text:
                              public_link = clipboard_text.strip()
-                             logger.info(f"✅ Found public link from clipboard (After Video Click): {public_link}")
+                             logger.info(f"[OK]  Found public link from clipboard (After Video Click): {public_link}")
                              return public_link
                  except Exception as e:
                      logger.warning(f"Video Item click strategy failed: {e}")
@@ -793,7 +793,7 @@ class SoraCreationPage(BasePage):
         # FINAL FALLBACK: Construct link from Video ID if possible
         # If UI is disabled/glitchy but we have the ID, we can guess the link.
         try:
-             logger.info("⚠️ UI extraction failed. Attempting to construct link from Video ID...")
+             logger.info("[WARNING]  UI extraction failed. Attempting to construct link from Video ID...")
              vid = await self._extract_video_id()
              
              # If simple extraction failed, try waiting for the anchor (maybe it loads late?)
@@ -812,7 +812,7 @@ class SoraCreationPage(BasePage):
 
              if vid:
                  fallback_link = f"https://sora.chatgpt.com/share/{vid}"
-                 logger.warning(f"⚠️ Constructed fallback link (UNVERIFIED): {fallback_link}")
+                 logger.warning(f"[WARNING]  Constructed fallback link (UNVERIFIED): {fallback_link}")
                  return fallback_link
         except Exception as e:
             logger.warning(f"Fallback ID construction failed: {e}")
@@ -918,7 +918,7 @@ class SoraCreationPage(BasePage):
                  match = re.search(pattern, content, re.IGNORECASE)
                  if match:
                      credits = int(match.group(1))
-                     logger.info(f"💰 Found credits UI: {credits}")
+                     logger.info(f"[CREDITS]  Found credits UI: {credits}")
                      break
                      
              # Close dialog
@@ -941,7 +941,7 @@ class SoraCreationPage(BasePage):
                      match = re.search(pattern, content, re.IGNORECASE)
                      if match:
                          credits = int(match.group(1))
-                         logger.info(f"💰 Found credits DirectURL: {credits}")
+                         logger.info(f"[CREDITS]  Found credits DirectURL: {credits}")
                          break
                          
                 # Go back to home
@@ -1040,7 +1040,7 @@ class SoraCreationPage(BasePage):
         filename = f"video_{timestamp}_{unique_id}.mp4"
         save_path = os.path.join(output_dir, filename)
         
-        logger.info(f"⬇️ Starting direct download: {video_url[:80]}...")
+        logger.info(f"[DOWNLOAD]  Starting direct download: {video_url[:80]}...")
         
         try:
             # Download using aiohttp with cookies
@@ -1071,11 +1071,11 @@ class SoraCreationPage(BasePage):
                 os.remove(save_path)
                 raise Exception(f"Downloaded file too small ({file_size} bytes), likely an error response")
             
-            logger.info(f"✅ Direct download successful: {save_path} ({file_size:,} bytes)")
+            logger.info(f"[OK]  Direct download successful: {save_path} ({file_size:,} bytes)")
             return save_path, file_size
             
         except Exception as e:
-            logger.error(f"❌ Direct download failed: {e}")
+            logger.error(f"[ERROR]  Direct download failed: {e}")
             # Clean up partial file
             if os.path.exists(save_path):
                 os.remove(save_path)
@@ -1124,7 +1124,7 @@ class SoraCreationPage(BasePage):
             """)
             
             if not video_text:
-                logger.warning("⚠️ Could not extract video description text")
+                logger.warning("[WARNING]  Could not extract video description text")
                 return False
             
             # Simple word matching
@@ -1132,22 +1132,22 @@ class SoraCreationPage(BasePage):
             matching_words = sum(1 for word in expected_words if word in video_text)
             
             if len(expected_words) == 0:
-                logger.warning("⚠️ Empty expected prompt")
+                logger.warning("[WARNING]  Empty expected prompt")
                 return False
             
             match_ratio = matching_words / len(expected_words)
             
-            logger.info(f"📊 Prompt match ratio: {match_ratio:.2f} ({matching_words}/{len(expected_words)} words)")
+            logger.info(f"[STATS]  Prompt match ratio: {match_ratio:.2f} ({matching_words}/{len(expected_words)} words)")
             
             if match_ratio >= similarity_threshold:
-                logger.info("✅ Video ownership verified!")
+                logger.info("[OK]  Video ownership verified!")
                 return True
             else:
-                logger.warning(f"⚠️ Video may not match expected prompt (ratio: {match_ratio:.2f})")
+                logger.warning(f"[WARNING]  Video may not match expected prompt (ratio: {match_ratio:.2f})")
                 return False
                 
         except Exception as e:
-            logger.error(f"❌ Verification failed: {e}")
+            logger.error(f"[ERROR]  Verification failed: {e}")
             return False
 
     async def get_video_count_in_drafts(self) -> int:
@@ -1172,7 +1172,7 @@ class SoraCreationPage(BasePage):
                 }
             """)
             
-            logger.info(f"📊 Draft count: {count}")
+            logger.info(f"[STATS]  Draft count: {count}")
             return count
             
         except Exception as e:

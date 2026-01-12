@@ -12,12 +12,12 @@ class AccountCreate(AccountBase):
     password: Optional[str] = None
 
 class AccountUpdate(AccountBase):
-    status: Optional[str] = None
+    # Removed status field - no longer stored in DB
     cookies: Optional[Dict[str, Any]] = None
 
 class Account(AccountBase):
     id: int
-    status: str
+    # Removed status field - account availability determined by credits only
     last_used: Optional[datetime] = None
     credits_remaining: Optional[int] = None
     credits_last_checked: Optional[datetime] = None
@@ -27,7 +27,7 @@ class Account(AccountBase):
     login_mode: Optional[str] = "auto" # <--- Added this field
 
     class Config:
-        orm_mode = True
+        from_attributes = True  # Pydantic V2 (renamed from orm_mode)
 
 # --- Job Schemas ---
 class JobBase(BaseModel):
@@ -35,7 +35,6 @@ class JobBase(BaseModel):
     image_path: Optional[str] = None
     duration: int = 5
     aspect_ratio: str = "16:9"
-    login_mode: Optional[str] = "auto" # "auto" or "manual"
 
 class JobCreate(JobBase):
     pass
@@ -44,6 +43,7 @@ class JobUpdate(BaseModel):
     prompt: Optional[str] = None
     duration: Optional[int] = None
     aspect_ratio: Optional[str] = None
+    image_path: Optional[str] = None
 
 
 class Job(JobBase):
@@ -57,7 +57,7 @@ class Job(JobBase):
     updated_at: Optional[datetime] = None
     account_id: Optional[int] = None
     account: Optional[Account] = None
-    login_mode: Optional[str] = "auto"
+    video_id: Optional[str] = None
     video_id: Optional[str] = None
     aspect_ratio: Optional[str] = None
     duration: Optional[int] = None
@@ -66,4 +66,4 @@ class Job(JobBase):
     retry_count: Optional[int] = 0
 
     class Config:
-        orm_mode = True
+        from_attributes = True  # Pydantic V2 (renamed from orm_mode)

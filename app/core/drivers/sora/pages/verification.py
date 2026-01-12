@@ -12,7 +12,7 @@ class SoraVerificationPage(BasePage):
     """
     [PARTIALLY DEPRECATED] UI automation for verification and credit checking.
 
-    ⚠️ Some methods are still used during login flow:
+    [WARNING]  Some methods are still used during login flow:
     - check_quota_exhausted() - used to detect verification requirements
     - handle_verification_flow() - used to handle verification during login
 
@@ -83,7 +83,7 @@ class SoraVerificationPage(BasePage):
                  match = re.search(pattern, content, re.IGNORECASE)
                  if match:
                      credits = int(match.group(1))
-                     logger.info(f"💰 Found credits UI: {credits}")
+                     logger.info(f"[CREDITS]  Found credits UI: {credits}")
                      break
                      
              # Close dialog
@@ -105,7 +105,7 @@ class SoraVerificationPage(BasePage):
                      match = re.search(pattern, content, re.IGNORECASE)
                      if match:
                          credits = int(match.group(1))
-                         logger.info(f"💰 Found credits DirectURL: {credits}")
+                         logger.info(f"[CREDITS]  Found credits DirectURL: {credits}")
                          break
                          
                 await self.page.goto("https://sora.chatgpt.com")
@@ -127,7 +127,7 @@ class SoraVerificationPage(BasePage):
             for indicator in SoraSelectors.VIDEO_COMPLETION_INDICATORS:
                 try:
                     if await self.page.is_visible(indicator, timeout=1000):
-                        logger.info(f"✅ Video completion detected: {indicator}")
+                        logger.info(f"[OK]  Video completion detected: {indicator}")
                         return True
                 except:
                     continue

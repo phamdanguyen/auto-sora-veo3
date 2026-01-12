@@ -40,6 +40,11 @@ MAX_ACCOUNT_SWITCHES = 10
 _account_semaphores: Dict[int, asyncio.Semaphore] = {}  # 1 concurrent job per account
 _semaphores_lock: Optional[asyncio.Lock] = None
 
+# Track active tasks
+_active_generate_tasks: Dict[str, asyncio.Task] = {}
+_tasks: List[asyncio.Task] = []
+STOP_EVENT = asyncio.Event() 
+
 def _get_semaphores_lock():
     """Lazy-init semaphores lock"""
     global _semaphores_lock
@@ -66,18 +71,6 @@ def _get_browser_lock():
 
 from app.core.task_manager import task_manager
 
-async def process_generate_tasks():
-    """
-    Worker loop for generation tasks - PARALLEL MODE
-    
-    Now spawns concurrent tasks per-account instead of sequential processing.
-    Rate limiting (30s) is enforced per-account to avoid being blocked.
-    """
-    logger.info(f"🎬 Generate Worker started (PARALLEL Mode). TaskManager ID: {id(task_manager)}")
-    logger.info(f"   Config: MAX_CONCURRENT={MAX_CONCURRENT_GENERATE}")
-
-# Global active tasks registry
-_active_generate_tasks: Dict[int, asyncio.Task] = {}
 
 async def process_generate_tasks():
     """
@@ -86,7 +79,7 @@ async def process_generate_tasks():
     Now spawns concurrent tasks per-account instead of sequential processing.
     Rate limiting (30s) is enforced per-account to avoid being blocked.
     """
-    logger.info(f"🎬 Generate Worker started (PARALLEL Mode). TaskManager ID: {id(task_manager)}")
+    logger.info(f"[GENERATE]  Generate Worker started (PARALLEL Mode). TaskManager ID: {id(task_manager)}")
     logger.info(f"   Config: MAX_CONCURRENT={MAX_CONCURRENT_GENERATE}")
 
     # Use global registry
@@ -106,9 +99,9 @@ async def process_generate_tasks():
                     # Check for exceptions
                     _active_generate_tasks[jid].result()
                 except asyncio.CancelledError:
-                    logger.warning(f"⚠️ Job #{jid} was cancelled.")
+                    logger.warning(f"[WARNING]  Job #{jid} was cancelled.")
                 except Exception as e:
-                    logger.error(f"❌ Background task for Job #{jid} failed: {e}")
+                    logger.error(f"[ERROR]  Background task for Job #{jid} failed: {e}")
                 
                 # Safe delete
                 if jid in _active_generate_tasks:
@@ -126,11 +119,11 @@ async def process_generate_tasks():
                 # Log heartbeat periodically
                 q_size = task_manager.generate_queue.qsize()
                 if q_size > 0:
-                    logger.info(f"💓 Heartbeat: Queue={q_size}, Active={len(_active_generate_tasks)}")
+                    logger.info(f"[HEARTBEAT]  Heartbeat: Queue={q_size}, Active={len(_active_generate_tasks)}")
                 continue
 
             job_id = task.job_id
-            logger.info(f"📥 [Queue] Picked up Job #{job_id}. Active tasks: {len(_active_generate_tasks)}/{MAX_CONCURRENT_GENERATE}")
+            logger.info(f"[QUEUE]  [Queue] Picked up Job #{job_id}. Active tasks: {len(_active_generate_tasks)}/{MAX_CONCURRENT_GENERATE}")
             tracker.update(job_id, "processing", message="Job dispatched to worker")
             
             # Spawn parallel task (will handle its own account selection + rate limiting)
@@ -140,18 +133,18 @@ async def process_generate_tasks():
             )
             _active_generate_tasks[job_id] = bg_task
             
-            logger.info(f"🚀 Job #{job_id} dispatched to background worker")
+            logger.info(f"[START]  Job #{job_id} dispatched to background worker")
 
         except Exception as e:
-            logger.error(f"❌ CRITICAL WORKER ERROR (Restarting Loop): {e}", exc_info=True)
+            logger.error(f"[ERROR]  CRITICAL WORKER ERROR (Restarting Loop): {e}", exc_info=True)
             await asyncio.sleep(5)
     
     # Cleanup on shutdown
-    logger.warning("🛑 Generate Worker stopping - waiting for active tasks...")
+    logger.warning("[STOP]  Generate Worker stopping - waiting for active tasks...")
     for jid, t in _active_generate_tasks.items():
         t.cancel()
     await asyncio.gather(*_active_generate_tasks.values(), return_exceptions=True)
-    logger.warning("🛑 Generate Worker Loop Exited (STOP_EVENT set)")
+    logger.warning("[STOP]  Generate Worker Loop Exited (STOP_EVENT set)")
 
 
 async def _process_generate_with_rate_limit(task):
@@ -178,7 +171,8 @@ async def _process_generate_with_rate_limit(task):
         # If account specifically assigned/requested
         if account_id and account_id not in exclude_ids:
             account = db.query(models.Account).filter(models.Account.id == account_id).first()
-            if account and account.status != "live":
+            # Check if account has credits (no more status column)
+            if account and account.credits_remaining is not None and account.credits_remaining <= 0:
                 account = None
         
         # If no specific account, find one from pool
@@ -187,7 +181,7 @@ async def _process_generate_with_rate_limit(task):
         
         if not account:
             # No account available - re-queue with delay
-            msg = f"⏳ No available account (all busy/cooldown/exhausted). Re-queuing..."
+            msg = f"[WAIT]  No available account (all busy/cooldown/exhausted). Re-queuing..."
             logger.warning(f"Job #{task.job_id}: {msg}")
             tracker.update(task.job_id, "queued", message="Waiting for available account")
             
@@ -200,7 +194,7 @@ async def _process_generate_with_rate_limit(task):
         
         async with account_sem:
             tracker.update(task.job_id, "processing", message=f"Locked Account #{account.id}", account_id=account.id)
-            logger.info(f"🔐 Job #{task.job_id}: Acquired semaphore for Account #{account.id}")
+            logger.info(f"[LOCK]  Job #{task.job_id}: Acquired semaphore for Account #{account.id}")
             
             # 4. Wait for rate limit cooldown (30s between submits for same account)
             # Only needed if this specific account was picked but is still in cooldown 
@@ -208,7 +202,7 @@ async def _process_generate_with_rate_limit(task):
             remaining = account_manager.get_cooldown_remaining(account.id)
             if remaining > 0:
                 msg = f"Waiting rate limit ({remaining:.1f}s)"
-                logger.info(f"⏳ Job #{task.job_id} (Account #{account.id}): {msg}")
+                logger.info(f"[WAIT]  Job #{task.job_id} (Account #{account.id}): {msg}")
                 tracker.update(task.job_id, "processing", message=msg)
                 await asyncio.sleep(remaining)
             
@@ -224,17 +218,17 @@ async def _process_generate_with_rate_limit(task):
                 
                 # 7. Process the job (API call)
                 tracker.update(task.job_id, "processing", message=f"Submitting job...")
-                logger.info(f"🎬 Processing Job #{task.job_id} with Account #{account.id} ({account.email})")
+                logger.info(f"[GENERATE]  Processing Job #{task.job_id} with Account #{account.id} ({account.email})")
                 
                 await process_single_generate_task(task)
                 
             finally:
                 # 8. Mark account as free
                 await account_manager.mark_account_free(account.id)
-                logger.info(f"✅ Job #{task.job_id}: Released Account #{account.id}")
+                logger.info(f"[OK]  Job #{task.job_id}: Released Account #{account.id}")
     
     except Exception as e:
-        logger.error(f"❌ _process_generate_with_rate_limit error for Job #{task.job_id}: {e}", exc_info=True)
+        logger.error(f"[ERROR]  _process_generate_with_rate_limit error for Job #{task.job_id}: {e}", exc_info=True)
         tracker.update(task.job_id, "failed", message=f"Worker error: {str(e)}")
         # Re-queue on error
         await asyncio.sleep(5)
@@ -258,7 +252,7 @@ async def process_single_generate_task(task):
 
         # Check if job was cancelled or removed
         if job.status not in ["pending", "processing", "sent_prompt", "generating", "download"]:
-            logger.warning(f"🛑 Job #{task.job_id} is in status '{job.status}'. Skipping task.")
+            logger.warning(f"[STOP]  Job #{task.job_id} is in status '{job.status}'. Skipping task.")
             return
 
         # Pre-assigned account from wrapper
@@ -267,11 +261,11 @@ async def process_single_generate_task(task):
         if account_id:
             account = db.query(models.Account).filter(models.Account.id == account_id).first()
 
-        if not account or account.status != "live":
-            # This should theoretically not happen if wrapper did its job, 
-            # unless account died in the microseconds between wrapper and here.
-            logger.error(f"❌ Job #{task.job_id}: Invalid Assigned Account #{account_id}")
-            tracker.update(task.job_id, "failed", message="Assigned account invalid")
+        # Check if account exists and has credits (no more status column)
+        if not account or (account.credits_remaining is not None and account.credits_remaining <= 0):
+            # This should theoretically not happen if wrapper did its job
+            logger.error(f"[ERROR]  Job #{task.job_id}: Invalid/No credits Account #{account_id}")
+            tracker.update(task.job_id, "failed", message="Account has no credits")
             # Fail the task so it can be retried properly
             await task_manager.fail_task(job, "generate", "Assigned account invalid/died")
             db.commit()
@@ -287,7 +281,7 @@ async def process_single_generate_task(task):
             db.rollback()
             raise
 
-        logger.info(f"📝 Processing generate task for job #{task.job_id} with account #{account.id} ({account.email})")
+        logger.info(f"[PROCESSING]  Processing generate task for job #{task.job_id} with account #{account.id} ({account.email})")
         tracker.update(task.job_id, "processing", message=f"Initializing driver for Account #{account.id}", account_id=account.id)
 
         # NOTE: Legacy browser lock removed. Semaphore in wrapper handles concurrency.
@@ -295,7 +289,7 @@ async def process_single_generate_task(task):
         # Actually api_only doesn't use profile dir, so no file lock needed.
 
         if account.token_status != "valid" or not account.access_token:
-            logger.warning(f"⚠️ Account #{account.id} ({account.email}) has invalid/missing token. Marking for login.")
+            logger.warning(f"[WARNING]  Account #{account.id} ({account.email}) has invalid/missing token. Marking for login.")
             try:
                 await task_manager.fail_task(job, "generate", "Account requires login (Token invalid/expired)")
                 db.commit()
@@ -313,7 +307,7 @@ async def process_single_generate_task(task):
             )
              
             # PRE-CHECK: Get credits via API
-            logger.info("💰 Checking credits via API...")
+            logger.info("[CREDITS]  Checking credits via API...")
             tracker.update(task.job_id, "processing", message="Checking credits...")
             
             credits_info = await driver.get_credits_api()
@@ -322,7 +316,7 @@ async def process_single_generate_task(task):
             has_credits = True
             
             if credits_info:
-                logger.info(f"💳 Credits available: {credits_info.get('credits', 'unknown')}")
+                logger.info(f"[CREDITS]  Credits available: {credits_info.get('credits', 'unknown')}")
                  
                 # Update account stats
                 if credits_info.get('credits') is not None:
@@ -343,16 +337,14 @@ async def process_single_generate_task(task):
                 account.credits_last_checked = datetime.utcnow()
                 db.commit()
             else:
-                logger.warning("⚠️ Could not check credits via API (Token might be expired). Proceeding with caution.")
+                logger.warning("[WARNING]  Could not check credits via API (Token might be expired). Proceeding with caution.")
 
             if not has_credits:
-                # Handle Exhausted Account
-                account.status = "quota_exhausted"
-                db.commit()
-                
-                logger.info(f"♻️ Re-queuing Job #{task.job_id} to find another account...")
+                # Handle Exhausted Account - credits_remaining already updated by API check
+                # No need to set status - just re-queue with this account excluded
+                logger.info(f"♻️ Re-queuing Job #{task.job_id} to find another account (Credits exhausted)...")
                 tracker.update(task.job_id, "queued", message="Switching account (Credits exhausted)")
-                
+
                 # Update Excludes to avoid selecting this account again immediately
                 excludes = task.input_data.get("exclude_account_ids", [])
                 if account.id not in excludes:
@@ -368,19 +360,41 @@ async def process_single_generate_task(task):
                 await task_manager.generate_queue.put(task)
                 return
 
+
+            # =========== UPLOAD IMAGE (If applicable) ===========
+            image_file_id = None
+            if job.image_path:
+                logger.info(f"📤 Job #{task.job_id} has image attachment: {job.image_path}")
+                tracker.update(task.job_id, "processing", message="Uploading image to Sora...")
+                
+                upload_res = await driver.upload_image_api(job.image_path)
+                
+                if upload_res.get("success"):
+                    image_file_id = upload_res.get("file_id")
+                    logger.info(f"[OK]  Image uploaded successfully! File ID: {image_file_id}")
+                else:
+                    error_msg = upload_res.get("error", "Unknown upload error")
+                    logger.error(f"[ERROR]  Image upload failed: {error_msg}")
+                    # Decide: Fail job or continue without image?
+                    # Let's fail it because user likely wants the image effect
+                    await task_manager.fail_task(job, "generate", f"Image upload failed: {error_msg}")
+                    db.commit()
+                    return
+
             # =========== API-ONLY VIDEO GENERATION ===========
-            logger.info(f"🚀 Submitting video via API for job #{task.job_id}...")
+            logger.info(f"[START]  Submitting video via API for job #{task.job_id}...")
             tracker.update(task.job_id, "processing", message="Submitting generation request...")
             
             api_result = await driver.generate_video_api(
                 prompt=task.input_data["prompt"],
                 orientation=task.input_data.get("orientation", "landscape"),
-                n_frames=task.input_data.get("n_frames", 180)  # 6 seconds default
+                n_frames=task.input_data.get("n_frames", 180),  # 6 seconds default
+                image_file_id=image_file_id
             )
             
             if not api_result.get("success"):
                 error_msg = str(api_result.get('error', 'Unknown API error'))[:200]
-                logger.error(f"❌ API generation failed: {error_msg}")
+                logger.error(f"[ERROR]  API generation failed: {error_msg}")
                 tracker.update(task.job_id, "failed", message=f"API Error: {error_msg}")
 
                 # Check for ACCOUNT-LEVEL errors that require switching accounts
@@ -388,20 +402,17 @@ async def process_single_generate_task(task):
                 needs_account_switch = any(k in error_msg.lower() for k in account_switch_keywords)
 
                 if needs_account_switch:
-                    logger.warning(f"⚠️ Account-level error detected: {error_msg}")
+                    logger.warning(f"[WARNING]  Account-level error detected: {error_msg}")
 
-                    # Mark account as needing verification/bad
-                    if "phone_number_required" in error_msg.lower() or "verification_required" in error_msg.lower():
-                        account_manager.mark_account_verification_needed(db, account)
-                    elif "suspended" in error_msg.lower() or "deactivated" in error_msg.lower():
-                        account.status = "suspended"
-                        db.commit()
+                    # No longer marking account status - just exclude it for this job
+                    # If verification/suspension needed, it will be handled in runtime
+                    # (account will fail API calls and get excluded naturally)
 
                     # Track account switches to prevent infinite loop
                     account_switch_count = task.input_data.get("account_switch_count", 0) + 1
 
                     if account_switch_count >= MAX_ACCOUNT_SWITCHES:
-                        logger.error(f"❌ Job #{job.id} exceeded max account switches ({MAX_ACCOUNT_SWITCHES})")
+                        logger.error(f"[ERROR]  Job #{job.id} exceeded max account switches ({MAX_ACCOUNT_SWITCHES})")
                         await task_manager.fail_task(job, "generate", f"Failed after switching {MAX_ACCOUNT_SWITCHES} accounts: {error_msg}")
                         db.commit()
                         return
@@ -413,7 +424,7 @@ async def process_single_generate_task(task):
                     other_account = account_manager.get_available_account(db, platform="sora", exclude_ids=exclude_ids)
 
                     if other_account:
-                        logger.info(f"🔄 Switching from Account #{account.id} to #{other_account.id} (switch {account_switch_count}/{MAX_ACCOUNT_SWITCHES})")
+                        logger.info(f"[MONITOR]  Switching from Account #{account.id} to #{other_account.id} (switch {account_switch_count}/{MAX_ACCOUNT_SWITCHES})")
                         from .task_manager import TaskContext
                         new_task = TaskContext(
                             job_id=job.id,
@@ -430,10 +441,10 @@ async def process_single_generate_task(task):
                             retry_count=task.retry_count
                         )
                         await task_manager.generate_queue.put(new_task)
-                        logger.info(f"✅ Job #{job.id} re-queued with different account")
+                        logger.info(f"[OK]  Job #{job.id} re-queued with different account")
                         return
                     else:
-                        logger.error(f"❌ No other accounts available for Job #{job.id}")
+                        logger.error(f"[ERROR]  No other accounts available for Job #{job.id}")
                         await task_manager.fail_task(job, "generate", f"No available accounts (all need verification or exhausted)")
                         db.commit()
                         return
@@ -452,7 +463,7 @@ async def process_single_generate_task(task):
                     return
             
             # API success
-            logger.info(f"✅ API submission SUCCESS! Task: {api_result.get('task_id')}")
+            logger.info(f"[OK]  API submission SUCCESS! Task: {api_result.get('task_id')}")
             tracker.update(task.job_id, "generating", message="Video generating...", progress=20.0)
             
             # REFRESH CREDITS for accuracy (User Requirement)
@@ -462,9 +473,9 @@ async def process_single_generate_task(task):
                 # Wait 2s for backend to update balance
                 await asyncio.sleep(2) 
                 refresh_credits = await driver.get_credits_api()
-                logger.info(f"💰 Credit Refresh: {refresh_credits.get('credits') if refresh_credits else 'Failed'}")
+                logger.info(f"[CREDITS]  Credit Refresh: {refresh_credits.get('credits') if refresh_credits else 'Failed'}")
             except Exception as e:
-                logger.warning(f"⚠️ Failed to refresh credits after submission: {e}")
+                logger.warning(f"[WARNING]  Failed to refresh credits after submission: {e}")
             
             # Use refreshed credits if available, else fallback to pre-check info
             final_credits_info = refresh_credits if refresh_credits else credits_info
@@ -481,7 +492,7 @@ async def process_single_generate_task(task):
                 credits_rem = result.get("credits_remaining")
                 reset_secs = result.get("reset_seconds")
                 
-                logger.info(f"✅ Job #{task.job_id} submitted! Credits: {credits_rem}")
+                logger.info(f"[OK]  Job #{task.job_id} submitted! Credits: {credits_rem}")
 
                 # UPDATE ACCOUNT CREDITS & RESET TIME
                 try:
@@ -526,7 +537,7 @@ async def process_single_generate_task(task):
                     db.commit()
 
                     # ===== PARALLEL FLOW: Enqueue Poll Task (Release browser lock early) =====
-                    logger.info(f"🔄 Job #{task.job_id} Submitted! Enqueuing POLL task for parallel processing...")
+                    logger.info(f"[MONITOR]  Job #{task.job_id} Submitted! Enqueuing POLL task for parallel processing...")
 
                     # Create poll task with saved tokens (for API-only polling)
                     from .task_manager import TaskContext
@@ -542,7 +553,7 @@ async def process_single_generate_task(task):
                         }
                     )
                     await task_manager.poll_queue.put(poll_task)
-                    logger.info(f"✅ Job #{task.job_id} poll task enqueued. Browser lock will be released.")
+                    logger.info(f"[OK]  Job #{task.job_id} poll task enqueued. Browser lock will be released.")
                     # ===== END SUBMIT PHASE - Browser lock released after this block =====
                 except Exception as commit_error:
                     logger.error(f"Failed in sequential flow (credits/poll/download): {commit_error}")
@@ -553,14 +564,15 @@ async def process_single_generate_task(task):
 
         except QuotaExhaustedException as e:
             # Handle quota exhaustion - mark account and retry with different account
-            logger.warning(f"⚠️ Account #{account.id} quota exhausted for job #{job.id}")
-            account_manager.mark_account_quota_exhausted(db, account)
+            logger.warning(f"[WARNING]  Account #{account.id} quota exhausted for job #{job.id}")
+            # No longer marking account status - credits_remaining already updated
+            # Account will be excluded naturally due to credits check
 
             # Track account switches to prevent infinite loop
             account_switch_count = task.input_data.get("account_switch_count", 0) + 1
 
             if account_switch_count >= MAX_ACCOUNT_SWITCHES:
-                logger.error(f"❌ Job #{job.id} exceeded max account switches ({MAX_ACCOUNT_SWITCHES})")
+                logger.error(f"[ERROR]  Job #{job.id} exceeded max account switches ({MAX_ACCOUNT_SWITCHES})")
                 try:
                     await task_manager.fail_task(job, "generate", f"Failed after switching {MAX_ACCOUNT_SWITCHES} accounts (all quota exhausted)")
                     db.commit()
@@ -576,7 +588,7 @@ async def process_single_generate_task(task):
                 other_account = account_manager.get_available_account(db, platform="sora", exclude_ids=exclude_ids)
 
                 if other_account:
-                    logger.info(f"🔄 Re-queuing job #{job.id} with different account (switch {account_switch_count}/{MAX_ACCOUNT_SWITCHES})...")
+                    logger.info(f"[MONITOR]  Re-queuing job #{job.id} with different account (switch {account_switch_count}/{MAX_ACCOUNT_SWITCHES})...")
                     from .task_manager import TaskContext
                     new_task = TaskContext(
                         job_id=job.id,
@@ -593,8 +605,8 @@ async def process_single_generate_task(task):
                     await task_manager.generate_queue.put(new_task)
                 else:
                     # No more accounts available - PAUSE SYSTEM
-                    logger.critical(f"🛑 CRITICAL: All accounts exhausted quota! Pausing system.")
-                    task_manager.pause(reason="⚠️ Out of Credits (All accounts exhausted)")
+                    logger.critical(f"[STOP]  CRITICAL: All accounts exhausted quota! Pausing system.")
+                    task_manager.pause(reason="[WARNING]  Out of Credits (All accounts exhausted)")
 
                     # Re-queue job as pending so it picks up when Resumed
                     job.status = "pending"
@@ -623,14 +635,15 @@ async def process_single_generate_task(task):
 
         except VerificationRequiredException as e:
             # Handle verification checkpoint - mark account and retry
-            logger.warning(f"⚠️ Account #{account.id} requires verification: {e}")
-            account_manager.mark_account_verification_needed(db, account)
+            logger.warning(f"[WARNING]  Account #{account.id} requires verification: {e}")
+            # No longer marking account status - will be handled in runtime
+            # Account will be excluded for this job naturally
 
             # Track account switches to prevent infinite loop
             account_switch_count = task.input_data.get("account_switch_count", 0) + 1
 
             if account_switch_count >= MAX_ACCOUNT_SWITCHES:
-                logger.error(f"❌ Job #{job.id} exceeded max account switches ({MAX_ACCOUNT_SWITCHES})")
+                logger.error(f"[ERROR]  Job #{job.id} exceeded max account switches ({MAX_ACCOUNT_SWITCHES})")
                 try:
                     await task_manager.fail_task(job, "generate", f"Failed after switching {MAX_ACCOUNT_SWITCHES} accounts (verification required)")
                     db.commit()
@@ -646,7 +659,7 @@ async def process_single_generate_task(task):
                 other_account = account_manager.get_available_account(db, platform="sora", exclude_ids=exclude_ids)
 
                 if other_account:
-                    logger.info(f"🔄 Re-queuing job #{job.id} with different account (due to verify, switch {account_switch_count}/{MAX_ACCOUNT_SWITCHES})...")
+                    logger.info(f"[MONITOR]  Re-queuing job #{job.id} with different account (due to verify, switch {account_switch_count}/{MAX_ACCOUNT_SWITCHES})...")
                     from .task_manager import TaskContext
                     new_task = TaskContext(
                         job_id=job.id,
@@ -671,19 +684,19 @@ async def process_single_generate_task(task):
 
         finally:
             if driver:
-                logger.info(f"🛑 Closing driver session for Job #{task.job_id}...")
+                logger.info(f"[STOP]  Closing driver session for Job #{task.job_id}...")
                 try:
                     # Force timeout on close to prevent hanging semaphore
                     await asyncio.wait_for(driver.stop(), timeout=5.0)
-                    logger.info(f"✅ Driver session closed for Job #{task.job_id}")
+                    logger.info(f"[OK]  Driver session closed for Job #{task.job_id}")
                 except Exception as e:
-                    logger.warning(f"⚠️ Error/Timeout closing driver: {e}")
+                    logger.warning(f"[WARNING]  Error/Timeout closing driver: {e}")
             
             if 'account_lock' in locals():
                 account_lock.release()
 
     except Exception as e:
-        logger.error(f"❌ Generate task failed for job #{job.id}: {e}")
+        logger.error(f"[ERROR]  Generate task failed for job #{job.id}: {e}")
         # ... (keep existing error handling) ...
         # SMART RETRY: If we have an account and haven't hit max retries, switch account
         retry_count = task.retry_count + 1
@@ -691,7 +704,7 @@ async def process_single_generate_task(task):
         account_switch_count = task.input_data.get("account_switch_count", 0) + 1
 
         if account and retry_count <= max_retries and account_switch_count < MAX_ACCOUNT_SWITCHES:
-             logger.warning(f"🔄 Smart Switch: Job #{job.id} failed on Account #{account.id}. Switching account (Attempt {retry_count}/{max_retries}, Switch {account_switch_count}/{MAX_ACCOUNT_SWITCHES})...")
+             logger.warning(f"[MONITOR]  Smart Switch: Job #{job.id} failed on Account #{account.id}. Switching account (Attempt {retry_count}/{max_retries}, Switch {account_switch_count}/{MAX_ACCOUNT_SWITCHES})...")
 
              # Exclude this bad account
              exclude_ids = task.input_data.get("exclude_account_ids", [])
@@ -738,7 +751,7 @@ async def process_single_generate_task(task):
 
 async def reset_stale_jobs():
     """Periodically reset jobs stuck in processing state"""
-    logger.info("🔄 Stale job monitor started")
+    logger.info("[MONITOR]  Stale job monitor started")
 
     while not STOP_EVENT.is_set():
         try:
@@ -748,12 +761,12 @@ async def reset_stale_jobs():
             q_gen = task_manager.generate_queue.qsize() if task_manager._generate_queue else 0
             q_poll = task_manager.poll_queue.qsize() if task_manager._poll_queue else 0
             q_dl = task_manager.download_queue.qsize() if task_manager._download_queue else 0
-            logger.info(f"📊 Queue Stats: Generate={q_gen}, Poll={q_poll}, Download={q_dl}")
+            logger.info(f"[STATS]  Queue Stats: Generate={q_gen}, Poll={q_poll}, Download={q_dl}")
 
             db = database.SessionLocal()
             try:
-                # Reset quota exhausted accounts after 24 hours
-                account_manager.reset_quota_exhausted_accounts(db, hours=24)
+                # No longer resetting account status - credits are checked in real-time
+                # Accounts with refreshed credits will be picked up automatically
 
                 # Find jobs stuck in processing for more than 15 minutes
                 from datetime import timedelta
@@ -765,7 +778,7 @@ async def reset_stale_jobs():
                 ).all()
 
                 for job in stale_jobs:
-                    logger.warning(f"🔄 Resetting stale job #{job.id} (Status: {job.status})")
+                    logger.warning(f"[MONITOR]  Resetting stale job #{job.id} (Status: {job.status})")
 
                     # Smart reset: Check task_state to determine what to do
                     try:
@@ -800,7 +813,7 @@ async def reset_stale_jobs():
                                         }
                                     )
                                     await task_manager.poll_queue.put(poll_task)
-                                    logger.info(f"  ✅ Poll task re-enqueued for Job #{job.id}")
+                                    logger.info(f"  [OK]  Poll task re-enqueued for Job #{job.id}")
                                     continue
 
                         # If video_url exists but download stuck -> Re-enqueue download
@@ -824,11 +837,11 @@ async def reset_stale_jobs():
                                 }
                             )
                             await task_manager.download_queue.put(dl_task)
-                            logger.info(f"  ✅ Download task re-enqueued for Job #{job.id}")
+                            logger.info(f"  [OK]  Download task re-enqueued for Job #{job.id}")
                             continue
 
                     except Exception as e:
-                        logger.error(f"  ❌ Smart reset failed for Job #{job.id}: {e}")
+                        logger.error(f"  [ERROR]  Smart reset failed for Job #{job.id}: {e}")
 
                     # Fallback: Simple reset to pending (for generate phase or unknown state)
                     job.status = "pending"
@@ -848,34 +861,59 @@ async def reset_stale_jobs():
 
 async def hydrate_queue_from_db():
     """Hydrate in-memory queue with pending jobs from DB on startup"""
-    logger.info("💧 Hydrating queue from database...")
+    logger.info("[HYDRATE]  Hydrating queue from database...")
     db = database.SessionLocal()
     try:
         # Find pending jobs that are NOT in a specific task state yet (fresh)
-        # OR jobs that are pending retry
+        # OR jobs that are pending retry. ALSO include 'download' jobs (server crash recovery).
         pending_jobs = db.query(models.Job).filter(
-            models.Job.status == "pending"
+            models.Job.status.in_(["pending", "download"])
         ).order_by(models.Job.created_at.asc()).all()
         
         count = 0
+        dl_count = 0
         for job in pending_jobs:
-            # Check if already in queue? We can't easily.
-            # But on startup, queue is empty.
             try:
-                # Re-submit to task manager
-                # Use start_job logic but without resetting status (it's already pending)
-                # Or just put to queue directly
-                
-                # Check task state to see if it's a retry or fresh
-                
-                await task_manager.start_job(job)
-                count += 1
+                # Handle Interrupted Download
+                if job.status == "download":
+                    if job.video_url:
+                        from .task_manager import TaskContext
+                        # Need account token for download?
+                        account = None
+                        if job.account_id:
+                            account = db.query(models.Account).filter(models.Account.id == job.account_id).first()
+                            
+                        dl_task = TaskContext(
+                            job_id=job.id,
+                            task_type="download",
+                            input_data={
+                                "video_url": job.video_url,
+                                "video_id": job.video_id,
+                                "access_token": account.access_token if account else None,
+                                "user_agent": account.user_agent if account else None
+                            }
+                        )
+                        task_manager._active_job_ids.add(job.id) # Mark as active
+                        await task_manager.download_queue.put(dl_task)
+                        dl_count += 1
+                        logger.info(f"[HYDRATE] Resuming Download for Job #{job.id}")
+                    else:
+                        logger.warning(f"[HYDRATE] Job #{job.id} is 'download' but missing video_url. Resetting to pending.")
+                        job.status = "pending"
+                        job.error_message = "Resumed but missing video_url"
+                        db.commit()
+                        await task_manager.start_job(job)
+                        count += 1
+                else:
+                    # Handle Pending / Retry
+                    await task_manager.start_job(job)
+                    count += 1
             except Exception as e:
                 logger.error(f"Failed to hydrate job #{job.id}: {e}")
         
-        if count > 0:
+        if count > 0 or dl_count > 0:
             db.commit()
-            logger.info(f"✅ Hydrated {count} pending jobs from DB.")
+            logger.info(f"[OK]  Hydrated queue: {count} pending, {dl_count} downloads.")
         
     except Exception as e:
         logger.error(f"Hydration error: {e}")
@@ -890,7 +928,7 @@ _tasks = set()
 async def stop_worker():
     """Signal all workers to stop and cancel pending tasks"""
     global _worker_running
-    logger.warning("🛑 Worker stopping... signaling shutdown.")
+    logger.warning("[STOP]  Worker stopping... signaling shutdown.")
     _worker_running = False
     STOP_EVENT.set()
     
@@ -899,7 +937,7 @@ async def stop_worker():
     
     # Cancel tracked tasks if any remain
     if _tasks:
-        logger.info(f"🛑 Cancelling {len(_tasks)} active tasks...")
+        logger.info(f"[STOP]  Cancelling {len(_tasks)} active tasks...")
         for t in _tasks:
             if not t.done():
                 t.cancel()
@@ -907,7 +945,7 @@ async def stop_worker():
         await asyncio.gather(*_tasks, return_exceptions=True)
         _tasks.clear()
     
-    logger.info("✅ Worker stopped.")
+    logger.info("[OK]  Worker stopped.")
 
 async def process_poll_tasks():
     """
@@ -920,7 +958,7 @@ async def process_poll_tasks():
     4. If task in pending list -> Re-queue (it's still processing).
     5. If task NOT in pending list -> It might be done or failed -> Check individually.
     """
-    logger.info("📡 Poll Worker started (Batch Mode, Parallel)")
+    logger.info("[POLL]  Poll Worker started (Batch Mode, Parallel)")
     
     while not STOP_EVENT.is_set():
         # Check Pause
@@ -965,7 +1003,7 @@ async def process_poll_tasks():
                 asyncio.create_task(_process_poll_batch_for_account(account_id, account_tasks))
 
         except Exception as e:
-            logger.error(f"❌ Poll Worker loop error: {e}", exc_info=True)
+            logger.error(f"[ERROR]  Poll Worker loop error: {e}", exc_info=True)
             await asyncio.sleep(5)
 
 
@@ -1013,55 +1051,56 @@ async def _process_poll_batch_for_account(account_id: int, tasks: List):
                     pending_ids.add(p.get("id"))
                     pending_data_map[p.get("id")] = p
         
-        # B. Classify Tasks
+        # B. Classify Tasks - ONLY USE TASK_ID (no more prompt matching!)
         still_pending = []
         needs_check = []
-        
+
         for t in tasks:
-            # We need the Sora Task ID from input_data
-            # In generate phase: result = {"task_id": ...}
-            # But "task" object here is the generic task context.
-            # The input_data for poll task usually has "prompt" or "task_id"?
-            # Check invoke in Generate Worker:
-            # (Generate worker puts to start_job... wait, Generate worker puts to poll_queue?)
-            # No, Start Job -> Generate -> ... -> Task Manager orchestration?
-            # Actually, Generate Worker just updates Job DB.
-            # The transition to Poll queue logic needs to be checked.
-            # Assuming task input has "prompt".
-            
-            # If we rely on prompts, it's fuzzy.
-            # But let's assume if prompt is in pending list -> it is pending.
-            
-            prompt = t.input_data.get("prompt")
-            # Try to find prompt in pending list
-            found_in_pending = False
-            
-            if pending_list:
-                for p in pending_list:
-                    if p.get("prompt") and prompt and p.get("prompt").strip() == prompt.strip():
-                        # Found it!
-                        found_in_pending = True
-                        progress = p.get("progress_pct", 0) * 100
-                        status = p.get("status", "processing")
+            # Get task_id from job state (REQUIRED for consistency)
+            job = db.query(models.Job).filter(models.Job.id == t.job_id).first()
+            if not job:
+                logger.error(f"Job #{t.job_id} not found in DB!")
+                needs_check.append(t)
+                continue
 
-                        logger.info(f"📊 Job #{t.job_id} (Acc #{account_id}): {status} {progress:.1f}%")
-                        tracker.update(t.job_id, "processing", progress=progress, message=f"Rendering: {progress:.1f}%")
+            # Extract task_id from job.task_state
+            sora_task_id = None
+            if job.task_state:
+                try:
+                    state = json.loads(job.task_state)
+                    sora_task_id = state.get("tasks", {}).get("generate", {}).get("task_id")
+                except Exception as e:
+                    logger.error(f"Job #{t.job_id}: Failed to parse task_state: {e}")
 
-                        # Update job timestamp to prevent stale monitor reset
-                        try:
-                            job = db.query(models.Job).filter(models.Job.id == t.job_id).first()
-                            if job:
-                                job.updated_at = datetime.utcnow()
-                                job.progress = int(progress)
-                                db.commit()
-                        except Exception as e:
-                            logger.warning(f"Failed to update timestamp for Job #{t.job_id}: {e}")
-                            db.rollback()
-                        break
-            
-            if found_in_pending:
+            if not sora_task_id:
+                logger.error(f"Job #{t.job_id}: No task_id found! Cannot poll. Moving to needs_check.")
+                needs_check.append(t)
+                continue
+
+            # Match by task_id ONLY (consistent and reliable)
+            if sora_task_id in pending_ids:
+                # Task is still pending - update progress
+                p = pending_data_map[sora_task_id]
+                progress_pct = p.get("progress_pct")
+                progress = (progress_pct * 100) if progress_pct is not None else 0
+                status = p.get("status", "processing")
+
+                logger.info(f"[POLL] Job #{t.job_id} (Task {sora_task_id}): {status} {progress:.1f}%")
+                tracker.update(t.job_id, "processing", progress=progress, message=f"Rendering: {progress:.1f}%")
+
+                # Update job timestamp to prevent stale monitor reset
+                try:
+                    job.updated_at = datetime.utcnow()
+                    job.progress = int(progress)
+                    db.commit()
+                except Exception as e:
+                    logger.warning(f"Job #{t.job_id}: Failed to update timestamp: {e}")
+                    db.rollback()
+
                 still_pending.append(t)
             else:
+                # Task NOT in pending list - likely completed or failed
+                logger.info(f"[POLL] Job #{t.job_id} (Task {sora_task_id}): NOT in pending list. Triggering deep check.")
                 needs_check.append(t)
         
         # C. Handle Still Pending
@@ -1104,31 +1143,46 @@ async def _process_single_poll_deep_check(task, driver, account):
         if not job: return
 
         tracker.update(task.job_id, "processing", message="Finalizing status...")
-        match_prompt = task.input_data.get("prompt", job.prompt)
 
-        # Get task_id from input_data or job.task_state
-        sora_task_id = task.input_data.get("task_id")
-        if not sora_task_id and job.task_state:
+        # Get task_id from job.task_state (REQUIRED)
+        sora_task_id = None
+        if job.task_state:
             try:
                 state = json.loads(job.task_state)
                 sora_task_id = state.get("tasks", {}).get("generate", {}).get("task_id")
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Job #{job.id}: Failed to parse task_state: {e}")
 
-        if sora_task_id:
-            logger.info(f"📌 Job #{job.id}: Polling with task_id = {sora_task_id}")
-        else:
-            logger.warning(f"⚠️ Job #{job.id}: No task_id available, using prompt matching (less reliable)")
+        if not sora_task_id:
+            logger.error(f"Job #{job.id}: No task_id found! Cannot poll completion. Failing job.")
+            job.status = "failed"
+            job.error_message = "No task_id found - cannot verify completion"
+            db.commit()
+            return
 
-        # Use wait_for_completion_api with task_id for precise matching
-        video_data = await driver.wait_for_completion_api(
-             match_prompt=match_prompt,
-             timeout=30, # Short timeout just to find it in drafts
-             task_id=sora_task_id  # CRITICAL: Use task_id for exact match
-        )
+        logger.info(f"[DEEP CHECK] Job #{job.id}: Polling completion for task_id = {sora_task_id}")
+
+        # Retry loop: 3 times x 60s - ONLY USE TASK_ID
+        video_data = None
+        for attempt in range(3):
+            logger.info(f"[DEEP CHECK] Job #{job.id}: Attempt {attempt+1}/3 (300s timeout)...")
+
+            video_data = await driver.wait_for_completion_api(
+                 match_prompt=None,  # Deprecated - DO NOT USE
+                 timeout=300,
+                 task_id=sora_task_id  # ONLY USE TASK_ID
+            )
+            
+            if video_data:
+                break
+                
+            if attempt < 2:
+                logger.info(f"[WAIT]  Job #{job.id}: Attempt {attempt+1} timed out, retrying...")
+                tracker.update(task.job_id, "processing", message=f"Rendering... (Try {attempt+1}/3)")
+
         
         if video_data and video_data.get("download_url"):
-            logger.info(f"✅ Video completed for Job #{job.id}! ID: {video_data.get('id')}")
+            logger.info(f"[OK]  Video completed for Job #{job.id}! ID: {video_data.get('id')}")
             tracker.update(task.job_id, "download", message="Ready for download")
 
             job.status = "download"
@@ -1150,7 +1204,7 @@ async def _process_single_poll_deep_check(task, driver, account):
             await task_manager.download_queue.put(dl_task)
 
         elif video_data and video_data.get("status") == "failed":
-             logger.error(f"❌ Video generation failed for Job #{job.id}")
+             logger.error(f"[ERROR]  Video generation failed for Job #{job.id}")
              tracker.update(task.job_id, "failed", message="Generation failed")
              job.status = "failed"
              job.error_message = "Generation failed"
@@ -1158,7 +1212,7 @@ async def _process_single_poll_deep_check(task, driver, account):
         else:
              # Still not found? Might be really slow or delayed appearance?
              # Re-queue poll
-             logger.warning(f"⚠️ Job #{job.id} not in pending OR drafts. Re-queuing poll.")
+             logger.warning(f"[WARNING]  Job #{job.id} not in pending OR drafts. Re-queuing poll.")
              await asyncio.sleep(10)
              await task_manager.poll_queue.put(task)
 
@@ -1174,7 +1228,7 @@ async def process_download_tasks():
     Downloads video using stored URL and aiohttp.
     Runs in PARALLEL with other workers (no browser lock needed).
     """
-    logger.info("⬇️ Download Worker started (API-only mode, PARALLEL)")
+    logger.info("[DOWNLOAD]  Download Worker started (API-only mode, PARALLEL)")
     while not STOP_EVENT.is_set():
         # Check Pause
         if task_manager.is_paused:
@@ -1197,10 +1251,10 @@ async def process_download_tasks():
 
                 # Skip if job was cancelled/completed/failed
                 if job.status not in ["download", "generating", "processing"]:
-                    logger.info(f"⏭️ Download task: Job #{job.id} status is '{job.status}', skipping")
+                    logger.info(f"[NEXT]  Download task: Job #{job.id} status is '{job.status}', skipping")
                     continue
 
-                logger.info(f"⬇️ Processing DOWNLOAD task for Job #{job.id} (API-only, Parallel)")
+                logger.info(f"[DOWNLOAD]  Processing DOWNLOAD task for Job #{job.id} (API-only, Parallel)")
 
                 download_url = task.input_data.get("video_url")
                 if not download_url:
@@ -1255,14 +1309,14 @@ async def process_download_tasks():
 
                                 # Verify file size
                                 if total_size < 10000:  # Less than 10KB is probably error
-                                    logger.error(f"❌ Downloaded file too small ({total_size} bytes)")
+                                    logger.error(f"[ERROR]  Downloaded file too small ({total_size} bytes)")
                                     job.status = "failed"
                                     job.error_message = f"Downloaded file too small ({total_size} bytes)"
                                     os.remove(filename)
                                     db.commit()
                                     continue
 
-                                logger.info(f"✅ Downloaded {filename} ({total_size:,} bytes)")
+                                logger.info(f"[OK]  Downloaded {filename} ({total_size:,} bytes)")
 
                                 # Update job
                                 # START FIX: Web path should be /downloads/... not /data/downloads/...
@@ -1291,13 +1345,13 @@ async def process_download_tasks():
                                 logger.info(f"🎉 Job #{job.id} COMPLETED SUCCESSFULLY!")
 
                             else:
-                                logger.error(f"❌ Download failed: HTTP {response.status}")
+                                logger.error(f"[ERROR]  Download failed: HTTP {response.status}")
                                 job.status = "failed"
                                 job.error_message = f"Download HTTP error: {response.status}"
                                 db.commit()
 
                 except Exception as dl_error:
-                    logger.error(f"❌ Download error for Job #{job.id}: {dl_error}")
+                    logger.error(f"[ERROR]  Download error for Job #{job.id}: {dl_error}")
                     job.status = "failed"
                     job.error_message = f"Download error: {str(dl_error)[:200]}"
                     db.commit()
@@ -1319,22 +1373,22 @@ async def start_task_manager_worker():
     """
     global _worker_running
     if _worker_running:
-        logger.warning("⚠️ Workers ALREADY RUNNING! Skipping start.")
+        logger.warning("[WARNING]  Workers ALREADY RUNNING! Skipping start.")
         return
 
     _worker_running = True
     STOP_EVENT.clear()
-    logger.info("🚀 Worker System Started (PARALLEL MODE)")
-    logger.info("   ├── Generate Worker: Browser-based (sequential login/submit)")
-    logger.info("   ├── Poll Worker: API-only (parallel)")
-    logger.info("   ├── Download Worker: API-only (parallel)")
-    logger.info("   └── Stale Job Monitor: Background cleanup")
+    logger.info("[START]  Worker System Started (PARALLEL MODE)")
+    logger.info("   |- - -  Generate Worker: Browser-based (sequential login/submit)")
+    logger.info("   |- - -  Poll Worker: API-only (parallel)")
+    logger.info("   |- - -  Download Worker: API-only (parallel)")
+    logger.info("   +- - -  Stale Job Monitor: Background cleanup")
 
     # Hydrate queue first
     try:
         await hydrate_queue_from_db()
     except Exception as e:
-        logger.error(f"❌ Failed to hydrate queue from DB: {e}. Worker starting fresh.")
+        logger.error(f"[ERROR]  Failed to hydrate queue from DB: {e}. Worker starting fresh.")
 
     # Start all workers
     try:
@@ -1355,7 +1409,7 @@ async def start_task_manager_worker():
 
         await asyncio.wait([t1, t2, t3, t4], return_when=asyncio.FIRST_COMPLETED)
     except Exception as e:
-        logger.error(f"❌ Critical Worker Startup Error: {e}", exc_info=True)
+        logger.error(f"[ERROR]  Critical Worker Startup Error: {e}", exc_info=True)
     finally:
         _worker_running = False # Reset on exit
 

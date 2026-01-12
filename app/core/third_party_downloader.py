@@ -68,7 +68,7 @@ class ThirdPartyDownloader:
             timestamp = datetime.datetime.now().strftime("%H%M%S")
             path = f"{DEBUG_DIR}/{timestamp}_{name}.png"
             await page.screenshot(path=path)
-            logger.info(f"📸 Debug download screenshot: {path}")
+            logger.info(f"[IMAGE]  Debug download screenshot: {path}")
         except Exception as e:
             logger.warning(f"Failed to take screenshot: {e}")
 
@@ -90,7 +90,7 @@ class ThirdPartyDownloader:
         """
         os.makedirs(output_dir, exist_ok=True)
         
-        logger.info(f"⬇️ Starting download for: {public_link}")
+        logger.info(f"[DOWNLOAD]  Starting download for: {public_link}")
 
         # Use class-level semaphore
         async with self._get_semaphore():
@@ -102,11 +102,11 @@ class ThirdPartyDownloader:
                     local_path, file_size = await service["download_method"](
                         page, public_link, output_dir
                     )
-                    logger.info(f"✅ Successfully downloaded via {service['name']}: {local_path}")
+                    logger.info(f"[OK]  Successfully downloaded via {service['name']}: {local_path}")
                     return local_path, file_size
 
                 except Exception as e:
-                    logger.warning(f"❌ {service['name']} failed: {e}")
+                    logger.warning(f"[ERROR]  {service['name']} failed: {e}")
                     last_error = e
                     continue
 
@@ -288,13 +288,13 @@ class ThirdPartyDownloader:
             filename = f"video_{timestamp}_{unique_id}.mp4"
             save_path = os.path.join(output_dir, filename)
 
-            logger.info(f"📥 Download started: {download.suggested_filename}")
+            logger.info(f"[QUEUE]  Download started: {download.suggested_filename}")
             try:
                 await download.save_as(save_path)
-                logger.info(f"✅ Download saved to: {save_path}")
+                logger.info(f"[OK]  Download saved to: {save_path}")
                 download_path = save_path
             except Exception as e:
-                logger.error(f"❌ Failed to save download: {e}")
+                logger.error(f"[ERROR]  Failed to save download: {e}")
 
         page.on("download", on_download)
 

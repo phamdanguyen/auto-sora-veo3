@@ -24,7 +24,7 @@ class SoraLoginPage(BasePage):
             timestamp = datetime.now().strftime("%H%M%S")
             path = f"{DEBUG_DIR}/{timestamp}_{name}.png"
             await self.page.screenshot(path=path)
-            logger.info(f"📸 Debug screenshot: {path}")
+            logger.info(f"[IMAGE]  Debug screenshot: {path}")
         except Exception as e:
             logger.warning(f"Failed to take screenshot: {e}")
 
@@ -33,16 +33,16 @@ class SoraLoginPage(BasePage):
         Wait for the user to manually log in.
         Polls for login success indicators (e.g., 'Sora' in title, 'explore' in URL).
         """
-        logger.info(f"⏳ Waiting {timeout}s for MANUAL login...")
+        logger.info(f"[WAIT]  Waiting {timeout}s for MANUAL login...")
         start_time = asyncio.get_event_loop().time()
         
         while (asyncio.get_event_loop().time() - start_time) < timeout:
             if await self.check_is_logged_in():
-                logger.info("✅ Manual Login Detected!")
+                logger.info("[OK]  Manual Login Detected!")
                 return True
             await asyncio.sleep(2)
             
-        logger.error("❌ Manual login timed out.")
+        logger.error("[ERROR]  Manual login timed out.")
         return False
     
     async def _debug_page_info(self, step: str):
@@ -61,8 +61,8 @@ class SoraLoginPage(BasePage):
         Supports Microsoft OAuth for Hotmail/Outlook accounts.
         """
         logger.info("=" * 60)
-        logger.info(f"🚀 Starting login for: {email}")
-        logger.info(f"🌐 Target URL: {base_url}")
+        logger.info(f"[START]  Starting login for: {email}")
+        logger.info(f"[API]  Target URL: {base_url}")
         logger.info(f"🕶️ Headless Mode: {headless_mode}")
         logger.info("=" * 60)
         
@@ -80,18 +80,18 @@ class SoraLoginPage(BasePage):
             await self._debug_page_info("NAVIGATE")
             logger.info("🚦 DEBUG: Navigation complete. Checking login status...")
         except Exception as e:
-            logger.error(f"❌ Navigation failed: {e}")
+            logger.error(f"[ERROR]  Navigation failed: {e}")
             await self._debug_screenshot("00_navigate_error")
         
         # Check if already logged in - AND FORCE LOGOUT if so
         logger.info("🚦 DEBUG: Calling check_is_logged_in()...")
         if await self.check_is_logged_in():
-            logger.info("⚠️ Session detected! Performing FORCE LOGOUT to ensure fresh token capture...")
+            logger.info("[WARNING]  Session detected! Performing FORCE LOGOUT to ensure fresh token capture...")
             
             # 1. Clear Cookies (Most reliable way to logout)
             if self.page.context:
                 await self.page.context.clear_cookies()
-                logger.info("✅ Cookies cleared.")
+                logger.info("[OK]  Cookies cleared.")
             
             # 2. Clear Local Storage (Just in case)
             try:
@@ -100,16 +100,16 @@ class SoraLoginPage(BasePage):
                 pass
 
             # 3. Reload to apply
-            logger.info("🔄 Reloading page after cleanup...")
+            logger.info("[MONITOR]  Reloading page after cleanup...")
             await self.page.reload(wait_until="domcontentloaded")
             await asyncio.sleep(3)
             
             # Double check
             if await self.check_is_logged_in():
-                 logger.warning("⚠️ Still logged in after cleanup? Attempting navigation to auth...")
+                 logger.warning("[WARNING]  Still logged in after cleanup? Attempting navigation to auth...")
                  await self.page.goto(base_url, timeout=30000)
             else:
-                 logger.info("✅ Logout successful. Proceeding to fresh login.")
+                 logger.info("[OK]  Logout successful. Proceeding to fresh login.")
         else:
             logger.info("🚦 DEBUG: Not logged in. Proceeding to content checks...")
 
@@ -126,7 +126,7 @@ class SoraLoginPage(BasePage):
                 for cookie_sel in ["button:has-text('Accept all')", "button:has-text('Accept')", "[data-testid='close-button']"]:
                     if await self.page.is_visible(cookie_sel, timeout=2000):
                         await self.page.click(cookie_sel)
-                        logger.info(f"✅ Clicked cookies button: {cookie_sel}")
+                        logger.info(f"[OK]  Clicked cookies button: {cookie_sel}")
                         await asyncio.sleep(1)
                         break
             except:
@@ -142,7 +142,7 @@ class SoraLoginPage(BasePage):
                 for sel in login_btns:
                     if await self.page.is_visible(sel, timeout=3000):
                         await self.page.click(sel)
-                        logger.info(f"✅ Clicked Login button: {sel}")
+                        logger.info(f"[OK]  Clicked Login button: {sel}")
                         await asyncio.sleep(5)
                         await self._debug_screenshot("00_after_login_click")
                         break
@@ -156,7 +156,7 @@ class SoraLoginPage(BasePage):
             else:
                 await self._login_with_email(email, password)
         except Exception as e:
-            logger.error(f"❌ Automated login error: {e}")
+            logger.error(f"[ERROR]  Automated login error: {e}")
             await self._debug_screenshot("login_error")
         
         # Final check
@@ -165,12 +165,12 @@ class SoraLoginPage(BasePage):
             logger.info("🎉 Login Successful!")
             await self._debug_screenshot("login_success")
         else:
-            logger.warning("⚠️ Auto login may have failed, checking for errors...")
+            logger.warning("[WARNING]  Auto login may have failed, checking for errors...")
             await self._debug_screenshot("login_may_failed")
             await self.check_login_errors()
             
             if headless_mode:
-                logger.error("🛑 Headless mode active. Skipping manual fallback wait.")
+                logger.error("[STOP]  Headless mode active. Skipping manual fallback wait.")
                 # Force cleanup of context if needed? No, driver handles it.
                 raise Exception("Headless Login Failed - Manual Intervention Required")
             
@@ -195,14 +195,14 @@ class SoraLoginPage(BasePage):
             try:
                 if await self.page.is_visible(sel, timeout=3000):
                     await self.page.click(sel)
-                    logger.info(f"✅ Clicked Microsoft button: {sel}")
+                    logger.info(f"[OK]  Clicked Microsoft button: {sel}")
                     clicked = True
                     break
             except:
                 continue
         
         if not clicked:
-            logger.error("❌ Microsoft button not found!")
+            logger.error("[ERROR]  Microsoft button not found!")
             await self._debug_screenshot("microsoft_btn_not_found")
             raise Exception("Microsoft login button not found")
         
@@ -225,7 +225,7 @@ class SoraLoginPage(BasePage):
                 try:
                     await self.page.wait_for_selector(sel, timeout=15000)
                     await self.page.fill(sel, email)
-                    logger.info(f"✅ Filled Microsoft email: {email}")
+                    logger.info(f"[OK]  Filled Microsoft email: {email}")
                     await self._debug_screenshot("02_ms_email_filled")
                     email_found = True
                     break
@@ -240,7 +240,7 @@ class SoraLoginPage(BasePage):
             next_btn = await self.page.query_selector("#idSIButton9, input[type='submit']")
             if next_btn:
                 await next_btn.click()
-                logger.info("✅ Clicked Next on Microsoft page")
+                logger.info("[OK]  Clicked Next on Microsoft page")
             else:
                 await self.page.keyboard.press("Enter")
             
@@ -261,7 +261,7 @@ class SoraLoginPage(BasePage):
                 try:
                     if await self.page.is_visible(sel, timeout=10000):
                         await self.page.fill(sel, password)
-                        logger.info("✅ Filled Microsoft password")
+                        logger.info("[OK]  Filled Microsoft password")
                         await self._debug_screenshot("04_ms_password_filled")
                         pass_found = True
                         break
@@ -276,7 +276,7 @@ class SoraLoginPage(BasePage):
             signin_btn = await self.page.query_selector("#idSIButton9, input[type='submit']")
             if signin_btn:
                 await signin_btn.click()
-                logger.info("✅ Clicked Sign In on Microsoft page")
+                logger.info("[OK]  Clicked Sign In on Microsoft page")
             else:
                 await self.page.keyboard.press("Enter")
             
@@ -293,7 +293,7 @@ class SoraLoginPage(BasePage):
                     yes_btn = await self.page.query_selector("#idSIButton9, button:has-text('Yes')")
                     if yes_btn:
                         await yes_btn.click()
-                        logger.info("✅ Clicked 'Yes' to stay signed in")
+                        logger.info("[OK]  Clicked 'Yes' to stay signed in")
                     await asyncio.sleep(5)
             except:
                 pass
@@ -306,7 +306,7 @@ class SoraLoginPage(BasePage):
             await self._debug_screenshot("07_after_redirect")
             
         except Exception as e:
-            logger.error(f"❌ Microsoft login flow error: {e}")
+            logger.error(f"[ERROR]  Microsoft login flow error: {e}")
             await self._debug_screenshot("ms_login_error")
             raise
 
@@ -324,16 +324,16 @@ class SoraLoginPage(BasePage):
         try:
              # Try primary first
              if await self.page.is_visible(login_btn_sel, timeout=3000):
-                 logger.info(f"✅ Found Login Button: {login_btn_sel}")
+                 logger.info(f"[OK]  Found Login Button: {login_btn_sel}")
                  await self.page.click(login_btn_sel)
                  login_clicked = True
              else:
                  # Fallback to list
-                 logger.warning("⚠️ Primary login button not found, checking alternatives...")
+                 logger.warning("[WARNING]  Primary login button not found, checking alternatives...")
                  for sel in SoraSelectors.LOGIN_BTN_INIT:
                      if await self.page.is_visible(sel, timeout=2000):
                          await self.page.click(sel)
-                         logger.info(f"✅ Clicked alternative Login button: {sel}")
+                         logger.info(f"[OK]  Clicked alternative Login button: {sel}")
                          login_clicked = True
                          break
         except Exception as e:
@@ -341,7 +341,7 @@ class SoraLoginPage(BasePage):
 
         # FALLBACK: If we couldn't click login, FORCE navigate to auth page
         if not login_clicked:
-             logger.warning("⚠️ Login button not found or not clickable. Forcing navigation to Auth URL...")
+             logger.warning("[WARNING]  Login button not found or not clickable. Forcing navigation to Auth URL...")
              try:
                  # Standard Auth URL
                  auth_url = "https://auth.openai.com/authorize?client_id=pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh&audience=https%3A%2F%2Fapi.openai.com%2Fv1&redirect_uri=https%3A%2F%2Fchatgpt.com%2Fapi%2Fauth%2Fcallback%2Fopenai&scope=openid%20profile%20email%20offline_access%20model.read%20model.request&response_type=code&response_mode=query&state=..."
@@ -369,9 +369,9 @@ class SoraLoginPage(BasePage):
         try:
             await self.page.wait_for_selector(email_sel, timeout=10000)
             await self.page.fill(email_sel, email)
-            logger.info(f"✅ Filled email: {email}")
+            logger.info(f"[OK]  Filled email: {email}")
         except Exception as e:
-            logger.error(f"❌ Email input not found: {e}")
+            logger.error(f"[ERROR]  Email input not found: {e}")
             await self._debug_screenshot("email_not_found")
             raise
 
@@ -383,19 +383,19 @@ class SoraLoginPage(BasePage):
             # Fallback to generic if specific not found
             if await self.page.is_visible(continue_email_sel, timeout=3000):
                 await self.page.click(continue_email_sel)
-                logger.info(f"✅ Clicked Email Continue: {continue_email_sel}")
+                logger.info(f"[OK]  Clicked Email Continue: {continue_email_sel}")
             else:
                  # Try strict generic "Continue" (EXACT match only)
-                 logger.warning("⚠️ Specific Email Continue button not found, searching for strict 'Continue'...")
+                 logger.warning("[WARNING]  Specific Email Continue button not found, searching for strict 'Continue'...")
                  strict_sel = "button:text-is('Continue')"
                  if await self.page.is_visible(strict_sel, timeout=3000):
                      await self.page.click(strict_sel)
-                     logger.info(f"✅ Clicked Strict Continue: {strict_sel}")
+                     logger.info(f"[OK]  Clicked Strict Continue: {strict_sel}")
                  else:
                      raise Exception("Could not find any safe 'Continue' button.")
                      
         except Exception as e:
-            logger.error(f"❌ Failed to click Continue (Email): {e}")
+            logger.error(f"[ERROR]  Failed to click Continue (Email): {e}")
             raise
 
         await asyncio.sleep(2) # Short wait for state change
@@ -441,7 +441,7 @@ class SoraLoginPage(BasePage):
             for sel in pwd_selectors:
                 if await self.page.is_visible(sel, timeout=500):
                     await self.page.fill(sel, password)
-                    logger.info(f"✅ Found Password Input: {sel}")
+                    logger.info(f"[OK]  Found Password Input: {sel}")
                     pwd_found = True
                     break
             if pwd_found: break
@@ -457,10 +457,10 @@ class SoraLoginPage(BasePage):
         if not pwd_found:
              # Try finding by Label as last resort
              try:
-                logger.info("⚠️ Selector lookup failed, trying get_by_label('Password')...")
+                logger.info("[WARNING]  Selector lookup failed, trying get_by_label('Password')...")
                 await self.page.get_by_label("Password").fill(password)
                 pwd_found = True
-                logger.info("✅ Found Password Input via Label")
+                logger.info("[OK]  Found Password Input via Label")
              except Exception as e:
                 # Final check for 2FA before giving up
                 if await self.page.is_visible(resend_sel):
@@ -468,7 +468,7 @@ class SoraLoginPage(BasePage):
                     await self.manual_login_fallback()
                     return  # User completed 2FA
                     
-                logger.error(f"❌ Password input not found via any method: {e}")
+                logger.error(f"[ERROR]  Password input not found via any method: {e}")
                 await self._debug_screenshot("password_not_found")
                 # Don't raise, let global error checker handle it
 
@@ -477,15 +477,15 @@ class SoraLoginPage(BasePage):
         try:
             if await self.page.is_visible(submit_sel, timeout=3000):
                  await self.page.click(submit_sel)
-                 logger.info(f"✅ Clicked Password Continue: {submit_sel}")
+                 logger.info(f"[OK]  Clicked Password Continue: {submit_sel}")
             else:
-                 logger.warning("⚠️ Specific Password Continue button not found, using generic...")
+                 logger.warning("[WARNING]  Specific Password Continue button not found, using generic...")
                  for s in ["button[type='submit']", "button:has-text('Continue')", "button:has-text('Log in')"]:
                      if await self.page.is_visible(s, timeout=1000):
                          await self.page.click(s)
                          break
         except Exception as e:
-            logger.error(f"❌ Failed to click Submit: {e}")
+            logger.error(f"[ERROR]  Failed to click Submit: {e}")
             raise
 
         await asyncio.sleep(3)
@@ -528,7 +528,7 @@ class SoraLoginPage(BasePage):
                 if await self.page.is_visible(ind, timeout=1000):
                     await self._debug_screenshot("error_detected")
                     error_text = await self.page.text_content(ind)
-                    logger.error(f"❌ Error detected: {error_text}")
+                    logger.error(f"[ERROR]  Error detected: {error_text}")
                     raise Exception(f"Login Failed: {error_text}")
             except:
                 pass
@@ -537,7 +537,7 @@ class SoraLoginPage(BasePage):
             try:
                 if await self.page.is_visible(ind, timeout=1000):
                     await self._debug_screenshot("verification_needed")
-                    logger.warning("⚠️ 2FA/Verification required! Waiting for user to complete...")
+                    logger.warning("[WARNING]  2FA/Verification required! Waiting for user to complete...")
                     # Instead of failing, wait for user to complete 2FA manually
                     await self.manual_login_fallback()
                     return  # User completed 2FA, continue
@@ -548,13 +548,13 @@ class SoraLoginPage(BasePage):
 
     async def manual_login_fallback(self):
         if os.environ.get("SKIP_MANUAL_WAIT"):
-            logger.warning("⚠️ SKIP_MANUAL_WAIT set. Skipping manual login wait.")
+            logger.warning("[WARNING]  SKIP_MANUAL_WAIT set. Skipping manual login wait.")
             raise Exception("Login Failed: Automated login failed and manual wait skipped.")
 
         logger.info("=" * 60)
-        logger.info("⚠️ MANUAL LOGIN REQUIRED")
-        logger.info("⚠️ Please login in the browser window that opened")
-        logger.info("⚠️ You have 5 minutes to complete login")
+        logger.info("[WARNING]  MANUAL LOGIN REQUIRED")
+        logger.info("[WARNING]  Please login in the browser window that opened")
+        logger.info("[WARNING]  You have 5 minutes to complete login")
         logger.info("=" * 60)
         
         max_wait = 300  # 5 minutes
@@ -565,7 +565,7 @@ class SoraLoginPage(BasePage):
             remaining = int(max_wait - (asyncio.get_event_loop().time() - start_time))
             
             if remaining % 30 == 0:
-                logger.info(f"⏳ Waiting for manual login... ({remaining}s remaining)")
+                logger.info(f"[WAIT]  Waiting for manual login... ({remaining}s remaining)")
                 await self._debug_screenshot(f"manual_wait_{remaining}s")
             
             if await self.check_is_logged_in():
