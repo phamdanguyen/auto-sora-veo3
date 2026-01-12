@@ -55,12 +55,23 @@ def find_free_port(start_port=8001, max_port=8100):
 
 def start_server(port):
     """Starts the FastAPI server in a background thread."""
-    # Run uvicorn Programmatically
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
+    try:
+        log_message(f"DEBUG: Entering start_server thread for port {port}")
+        from app.main import app
+        log_message("DEBUG: app.main imported successfully")
+        
+        # Run uvicorn Programmatically
+        # log_level can be set to "debug" for more info if needed
+        uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
+        log_message("DEBUG: uvicorn.run finished (server stopped?)")
+    except Exception as e:
+        log_message(f"CRITICAL ERROR in server thread: {e}")
+        import traceback
+        log_message(traceback.format_exc())
 
 def on_closed():
     """Handler for when the window is closed."""
-    print("App window closed. Shutting down...")
+    log_message("App window closed. Shutting down...")
     os._exit(0)
 
 
@@ -154,11 +165,16 @@ if __name__ == "__main__":
                 resizable=True,
                 confirm_close=True
             )
-            webview.start(on_closed, debug=True) # Turn on debug for webview
+            # IMPORTANT: trigger on_closed only when the window is actually closed (via events) 
+            # or after start returns.
+            # webview.start(func) executes func ON STARTUP. Do not pass on_closed here!
+            webview.start(debug=False) 
+            
             log_message("Webview loop finished (Normal exit)")
+            on_closed()
+            
         except Exception as e:
              log_message(f"CRITICAL ERROR in webview.start: {e}")
-             # Keep window open to see error if it was a console app
              import traceback
              log_message(traceback.format_exc())
 
