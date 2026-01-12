@@ -207,10 +207,15 @@ if __name__ == "__main__":
                 confirm_close=True,
                 maximized=True  # Start maximized
             )
+            
+            # FIX: Add flags to prevent black screen / rendering issues in some environments
+            # This disables GPU acceleration which is the most common cause of black screens in WebView2
+            os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--disable-gpu --disable-accelerated-2d-canvas --disable-features=UseSkiaRenderer"
+            
             # IMPORTANT: trigger on_closed only when the window is actually closed (via events) 
             # or after start returns.
             # webview.start(func) executes func ON STARTUP. Do not pass on_closed here!
-            webview.start(debug=False) 
+            webview.start(debug=True) # Enable debug for Right Click > Inspect 
             
             log_message("Webview loop finished (Normal exit)")
             on_closed()

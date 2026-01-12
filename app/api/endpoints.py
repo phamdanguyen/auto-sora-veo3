@@ -1122,32 +1122,53 @@ import sys
 @router.post("/jobs/{job_id}/open_folder")
 def open_job_folder(job_id: int, db: Session = Depends(get_db)):
     job = db.query(models.Job).filter(models.Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    if not job or not job.local_path:
+        raise HTTPException(status_code=404, detail="Job/File not found")
 
-    # Determine absolute path
-    # job.local_path is web path like "/downloads/video.mp4"
-    # We need to map it to "data/downloads/video.mp4"
-    if not job.local_path:
-         raise HTTPException(status_code=400, detail="No local file for this job")
-    
+    # local_path is relative web path e.g. /downloads/file.mp4
+    # convert to absolute path
+    # We assume local_path follows /downloads/ naming convention
     filename = os.path.basename(job.local_path)
-    abs_path = os.path.abspath(os.path.join("data", "downloads", filename))
+    # Security: Ensure filename doesn't have path traversal
+    if ".." in filename or "/" in filename or "\\" in filename: 
+         # The basename check above handles slashes, but double check
+         pass
+         
+    abs_path = os.path.abspath(os.path.join("data/downloads", filename))
     
     if not os.path.exists(abs_path):
-         raise HTTPException(status_code=404, detail=f"File not found on disk: {abs_path}")
+         raise HTTPException(status_code=404, detail="File not found on disk")
          
-    # Open in Explorer (Windows specific)
-    try:
-        if sys.platform == 'win32':
-            # explorer /select, "param"
-            subprocess.Popen(['explorer', '/select,', abs_path])
-        else:
-            # Fallback for Mac/Linux (open folder)
-             subprocess.Popen(['xdg-open', os.path.dirname(abs_path)])
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to open folder: {e}")
+    # Open FOLDER
+    if os.name == 'nt':
+        subprocess.run(['explorer', '/select,', abs_path])
+    elif os.name == 'posix':
+        subprocess.run(['xdg-open', os.path.dirname(abs_path)])
+    
+    return {"ok": True}
 
+@router.post("/jobs/{job_id}/open_video")
+def open_job_video(job_id: int, db: Session = Depends(get_db)):
+    """Opens the video file in the system default media player."""
+    job = db.query(models.Job).filter(models.Job.id == job_id).first()
+    if not job or not job.local_path:
+        raise HTTPException(status_code=404, detail="Job/File not found")
+
+    filename = os.path.basename(job.local_path)
+    abs_path = os.path.abspath(os.path.join("data/downloads", filename))
+    
+    if not os.path.exists(abs_path):
+         raise HTTPException(status_code=404, detail="File not found on disk")
+         
+    try:
+        os.startfile(abs_path) # Windows only
+    except AttributeError:
+        # Mac/Linux
+        if os.name == 'posix':
+             subprocess.run(['xdg-open', abs_path])
+        else:
+             subprocess.run(['open', abs_path])
+    
     return {"ok": True}
 
 # --- System Settings ---

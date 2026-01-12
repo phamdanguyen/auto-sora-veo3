@@ -651,6 +651,7 @@
                                 class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500">
                                 <option value="5">5 seconds</option>
                                 <option value="10">10 seconds</option>
+                                <option value="15">15 seconds</option>
                             </select>
                         </div>
                         <div>
@@ -752,6 +753,7 @@
                             class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500">
                             <option value="5">5 seconds</option>
                             <option value="10">10 seconds</option>
+                            <option value="15">15 seconds</option>
                         </select>
                     </div>
                     <div>
@@ -851,7 +853,7 @@
                         <div
                             class="w-full aspect-video bg-black flex items-center justify-center rounded overflow-hidden">
                             <template x-if="selectedJob.local_path">
-                                <video controls autoplay class="w-full h-full object-contain">
+                                <video controls autoplay muted class="w-full h-full object-contain">
                                     <source :src="selectedJob.local_path" type="video/mp4">
                                     Your browser does not support the video tag.
                                 </video>
@@ -860,10 +862,15 @@
                                 <span class="text-white text-sm">Preview Local Video Not Available</span>
                             </template>
                         </div>
-                        <div class="mt-2 text-right">
+                        <div class="mt-2 text-right space-x-2">
+                            <button @click="openVideo(selectedJob.id)" x-show="selectedJob.local_path"
+                                class="text-blue-600 hover:underline text-sm font-medium">
+                                ▶ Play in Default Player
+                            </button>
+                            <span class="text-gray-300">|</span>
                             <a :href="selectedJob.local_path || selectedJob.video_url" target="_blank"
                                 class="text-blue-600 hover:underline text-sm"
-                                x-text="selectedJob.local_path ? 'Download Local Video' : 'Open External Link'"></a>
+                                x-text="selectedJob.local_path ? 'Download / View in Browser' : 'Open External Link'"></a>
                         </div>
                     </div>
                 </div>
@@ -1375,6 +1382,18 @@
                     await fetch(`/api/jobs/${jobId}/open_folder`, {
                         method: 'POST'
                     });
+                },
+
+                async openVideo(jobId) {
+                    try {
+                        const res = await fetch(`/api/jobs/${jobId}/open_video`, { method: 'POST' });
+                        if (!res.ok) {
+                            const data = await res.json().catch(() => ({}));
+                            alert("Failed to open video: " + (data.detail || "Unknown error"));
+                        }
+                    } catch (e) {
+                        alert("Error: " + e);
+                    }
                 },
 
                 async bulkAction(action) {

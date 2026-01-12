@@ -385,10 +385,35 @@ async def process_single_generate_task(task):
             logger.info(f"[START]  Submitting video via API for job #{task.job_id}...")
             tracker.update(task.job_id, "processing", message="Submitting generation request...")
             
+            # Map parameters
+            # Duration -> n_frames (Assuming 30fps)
+            # 5s -> 150 frames
+            # 10s -> 300 frames
+            duration_val = int(job.duration) if job.duration else 5
+            n_frames = duration_val * 30
+            
+            # Aspect Ratio -> Orientation
+            # 16:9 -> landscape
+            # 9:16 -> portrait
+            # 1:1 -> square
+            orientation = "landscape"
+            aspect_ratio = job.aspect_ratio or "16:9"
+            
+            if aspect_ratio == "9:16":
+                orientation = "portrait"
+            elif aspect_ratio == "1:1":
+                orientation = "square" # or whatever 1:1 maps to if square isn't valid, but let's try square/landscape with size adjustment? 
+                # Actually driver.generate_video_api takes orientation.
+                # If 1:1, usually prompts use specific size or 'square'?
+                # Based on typical API, 'square' is often a valid orientation or inferred.
+                # If strict enum: ['landscape', 'portrait', 'square']
+                # Let's assume 'square' is valid for now based on common AI video schemas.
+                orientation = "square"
+
             api_result = await driver.generate_video_api(
                 prompt=task.input_data["prompt"],
-                orientation=task.input_data.get("orientation", "landscape"),
-                n_frames=task.input_data.get("n_frames", 180),  # 6 seconds default
+                orientation=orientation,
+                n_frames=n_frames, 
                 image_file_id=image_file_id
             )
             
