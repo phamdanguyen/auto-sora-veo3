@@ -9,16 +9,6 @@ import asyncio
 
 # ... (imports) ...
 
-# CORS (allow all for local dev)
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origin_regex=".*", # Force allow ALL origins (including null, file, etc)
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
-
-
 # This must be set BEFORE any asyncio event loop is created
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -74,23 +64,44 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     
+    
     # Start Background Workers
-    # auto_start = os.getenv("AUTO_START_WORKERS", "True").lower() == "true"
-    
     # ALWAYS START WORKERS as per user request
-    logger.info("[OK] Auto-starting workers (Values enforced to True)...")
+    logger.info("[OK] Auto-starting workers...")
     
-    # 1. Generate Worker (handles Sora submission)
-    asyncio.create_task(worker.start_worker())
+    # --- NEW WORKER MANAGER INITIALIZATION ---
+    from .database import SessionLocal
+    from .core.repositories.job_repo import JobRepository
+    from .core.repositories.account_repo import AccountRepository
+    from .core.drivers.factory import register_default_drivers, driver_factory
     
-    # 2. Download/Verify Worker (Scanning mode)
-    asyncio.create_task(worker_download.start_worker())
+    # 0. Register Drivers
+    register_default_drivers()
+    
+    # 1. Initialize DB Session for Workers
+    # Note: Using Sync Session in Async Workers is blocking but safe if single-threaded.
+    # TODO: Migrate to AsyncSession for performance.
+    worker_session = SessionLocal()
+    
+    # 2. Initialize Repositories
+    job_repo = JobRepository(worker_session)
+    account_repo = AccountRepository(worker_session)
+    
+    # 3. Initialize Manager
+    worker_manager = init_worker_manager(job_repo, account_repo, driver_factory)
+    
+    # 4. Start All
+    await worker_manager.start_all()
         
     yield
     
     # --- SHUTDOWN ---
     logger.warning("[SHUTDOWN] Application shutdown triggered. Stopping workers...")
-    await worker.stop_worker()
+    if worker_manager:
+        await worker_manager.stop_all()
+        
+    # Close worker session
+    worker_session.close()
     
     # Also clear any locks if feasible
     from .core import account_manager
@@ -133,12 +144,32 @@ app.mount("/uploads", StaticFiles(directory=ABS_UPLOAD_DIR), name="uploads")
 
 from fastapi.responses import FileResponse
 import asyncio
-from .core import worker_v2 as worker  # Use Refactored Worker (v2)
-from .core import worker_download  # New Download Verification Worker
+# from .core import worker_v2 as worker  # REMOVED: Legacy Worker
+# from .core import worker_download  # REMOVED: Legacy Download Worker
+from .core.workers.manager import init_worker_manager, get_worker_manager
 
-# Include API Router
-from .api import endpoints
-app.include_router(endpoints.router, prefix="/api")
+# ========== Include API Routers ==========
+# Phase 4: New modular routers (SOLID principles)
+from .api.routers import accounts, jobs, system
+
+# Include new routers
+app.include_router(accounts.router, prefix="/api")
+app.include_router(jobs.router, prefix="/api")
+app.include_router(system.router, prefix="/api")
+
+# Legacy endpoints (maintained for backward compatibility)
+# Note: New clients should use the modular routers above
+# This can be removed once all clients migrate to new API structure
+# from .api import endpoints # REMOVED: Moved to app.legacy
+# Update import path if endpoints was moved to legacy
+# Ideally we should use the new app.legacy.endpoints
+# But endpoints.py in main was likely app.api.endpoints which was moved.
+# Let's fix the import to point to new location or rely on modules being distinct.
+# Since we moved app/api/endpoints.py to app/legacy/endpoints.py,
+# and created app/legacy/__init__.py,
+# we need to import from app.legacy.endpoints
+from .legacy import endpoints as legacy_endpoints
+app.include_router(legacy_endpoints.router, prefix="/api/legacy")
 
 @app.get("/")
 async def read_dashboard():

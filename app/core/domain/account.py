@@ -29,8 +29,8 @@ class AccountId:
     value: int
 
     def __post_init__(self):
-        if self.value <= 0:
-            raise ValueError("Account ID must be positive")
+        if self.value < 0:  # Allow 0 for new accounts
+            raise ValueError("Account ID cannot be negative")
 
     def __str__(self) -> str:
         return str(self.value)

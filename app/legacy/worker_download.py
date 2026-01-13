@@ -9,11 +9,11 @@ import os
 import json
 from datetime import datetime
 from sqlalchemy.orm import Session
-from . import account_manager
+from app.core import account_manager
 from .. import models, database
-from .drivers.sora import SoraDriver
-from .security import decrypt_password
-from .third_party_downloader import ThirdPartyDownloader
+from app.core.drivers.sora import SoraDriver
+from app.core.security import decrypt_password
+from app.core.third_party_downloader import ThirdPartyDownloader
 from playwright.async_api import async_playwright
 
 logger = logging.getLogger(__name__)

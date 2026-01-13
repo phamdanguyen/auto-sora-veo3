@@ -23,10 +23,10 @@ from ..core.container import container
 from ..core.repositories.account_repo import AccountRepository
 from ..core.repositories.job_repo import JobRepository
 
-# NOTE: Services dependencies sẽ được add ở Phase 2
-# from ..core.services.account_service import AccountService
-# from ..core.services.job_service import JobService
-# from ..core.services.task_service import TaskService
+# Services (Phase 2)
+from ..core.services.account_service import AccountService
+from ..core.services.job_service import JobService
+from ..core.services.task_service import TaskService
 
 
 # ========== Database Session ==========
@@ -112,31 +112,84 @@ def get_driver_factory():
 
 
 # ========== Services (Phase 2) ==========
-# def get_account_service(
-#     account_repo: AccountRepository = Depends(get_account_repository),
-#     driver_factory: DriverFactory = Depends(get_driver_factory)
-# ) -> AccountService:
-#     """Dependency để lấy AccountService"""
-#     return AccountService(account_repo, driver_factory)
+def get_account_service(
+    account_repo: AccountRepository = Depends(get_account_repository),
+    driver_factory = Depends(get_driver_factory)
+) -> AccountService:
+    """
+    Dependency để lấy AccountService
+
+    Args:
+        account_repo: AccountRepository (auto-injected)
+        driver_factory: DriverFactory (auto-injected)
+
+    Returns:
+        AccountService instance
+
+    Usage:
+        @router.post("/accounts/refresh-credits")
+        async def refresh_credits(
+            account_id: int,
+            service: AccountService = Depends(get_account_service)
+        ):
+            return await service.refresh_credits(account_id)
+    """
+    return AccountService(account_repo, driver_factory)
 
 
-# def get_job_service(
-#     job_repo: JobRepository = Depends(get_job_repository),
-#     account_repo: AccountRepository = Depends(get_account_repository)
-# ) -> JobService:
-#     """Dependency để lấy JobService"""
-#     return JobService(job_repo, account_repo)
+def get_job_service(
+    job_repo: JobRepository = Depends(get_job_repository),
+    account_repo: AccountRepository = Depends(get_account_repository)
+) -> JobService:
+    """
+    Dependency để lấy JobService
+
+    Args:
+        job_repo: JobRepository (auto-injected)
+        account_repo: AccountRepository (auto-injected)
+
+    Returns:
+        JobService instance
+
+    Usage:
+        @router.post("/jobs/")
+        async def create_job(
+            prompt: str,
+            service: JobService = Depends(get_job_service)
+        ):
+            return await service.create_job(prompt, ...)
+    """
+    return JobService(job_repo, account_repo)
 
 
-# def get_task_service(
-#     job_repo: JobRepository = Depends(get_job_repository),
-#     account_repo: AccountRepository = Depends(get_account_repository)
-# ) -> TaskService:
-#     """Dependency để lấy TaskService"""
-#     return TaskService(job_repo, account_repo)
+def get_task_service(
+    job_repo: JobRepository = Depends(get_job_repository),
+    account_repo: AccountRepository = Depends(get_account_repository)
+) -> TaskService:
+    """
+    Dependency để lấy TaskService
+
+    Args:
+        job_repo: JobRepository (auto-injected)
+        account_repo: AccountRepository (auto-injected)
+
+    Returns:
+        TaskService instance
+
+    Usage:
+        @router.post("/jobs/{job_id}/start")
+        async def start_job(
+            job_id: int,
+            service: TaskService = Depends(get_task_service)
+        ):
+            return await service.start_job(job_id)
+    """
+    return TaskService(job_repo, account_repo)
 
 
-# ========== Workers (Phase 3) ==========
+# ========== Workers ==========
+# Note: Currently using legacy worker_v2 system
+# Future: Migrate to new WorkerManager with dependency injection
 # def get_worker_manager() -> WorkerManager:
 #     """Dependency để lấy WorkerManager"""
 #     return container.worker_manager()

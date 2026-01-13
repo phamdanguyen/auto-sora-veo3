@@ -34,8 +34,7 @@ def create_account(account: schemas.AccountCreate, db: Session = Depends(get_db)
         platform=account.platform,
         email=account.email,
         password=encrypt_password(account.password),
-        proxy=account.proxy,
-        status="live"
+        proxy=account.proxy
     )
     db.add(db_account)
     db.commit()
@@ -113,6 +112,8 @@ async def global_manual_login(db: Session = Depends(get_db)):
                             detected_email = decoded["email"]
                         elif "https://api.openai.com/profile" in decoded:
                             detected_email = decoded["https://api.openai.com/profile"].get("email")
+                        elif "user" in decoded and isinstance(decoded["user"], dict):
+                             detected_email = decoded["user"].get("email")
                         
                         if detected_email:
                             token_captured = True
@@ -121,8 +122,21 @@ async def global_manual_login(db: Session = Depends(get_db)):
                     except Exception as jwt_err:
                         logger.warning(f"Failed to decode JWT: {jwt_err}")
                         # Fallback: Detect email via API if JWT fails
+                
+                # FALLBACK: Try reading from localStorage directly if interception missed it
+                try:
+                    # Some versions store it in accessToken
+                    ls_token = await driver.page.evaluate("() => localStorage.getItem('accessToken')")
+                    if ls_token:
+                         driver.latest_access_token = f"Bearer {ls_token}" if not ls_token.startswith("Bearer") else ls_token
+                         logger.info("[TOKEN] Found access token in localStorage!")
+                except:
+                    pass
+
+                # Fallback: API check
+                if driver.latest_access_token and not detected_email:
                         try:
-                            logger.info("🕵️ JWT Decode failed, trying API profile fetch...")
+                            # logger.info("🕵️ JWT Decode failed or email missing, trying API profile fetch...")
                             # Just try to fetch user info from known endpoint
                             # We use cookies implicitly by likely not sending Auth header if token is missing
                             user_profile = await driver.page.evaluate("""async () => {
@@ -146,8 +160,8 @@ async def global_manual_login(db: Session = Depends(get_db)):
                                  logger.info(f"✨ Email detected via API: {detected_email}")
                                  break
                         except Exception as api_err:
-                             logger.warning(f"API fallback failed: {api_err}")
-                        pass
+                             # logger.warning(f"API fallback failed: {api_err}")
+                             pass
                 
                 await asyncio.sleep(poll_interval)
 
@@ -164,7 +178,6 @@ async def global_manual_login(db: Session = Depends(get_db)):
                     platform="sora",
                     email=detected_email,
                     password="", # Password unknown/not needed for cookie auth
-                    status="live",
                     login_mode="manual" # Default to manual for captured accounts
                 )
                 db.add(account)
@@ -797,7 +810,38 @@ class BulkActionRequest(BaseModel):
     action: str # retry_failed, delete_all, clear_completed
     job_ids: Optional[List[int]] = None # Optional list of specific IDs
 
+
+
 from fastapi import WebSocket, WebSocketDisconnect
+
+# --- LICENSE API ---
+class LicenseUpdateRequest(BaseModel):
+    key: str
+
+@router.get("/license/info")
+def get_license_info():
+    from ..core.license_manager import LicenseManager
+    return LicenseManager.get_license_status()
+
+@router.post("/license/update")
+def update_license(request: LicenseUpdateRequest):
+    from ..core.license_manager import LicenseManager
+    
+    is_valid, msg, expiry = LicenseManager.validate_key(request.key)
+    if is_valid:
+        LicenseManager.save_key(request.key)
+        return {
+            "success": True,
+            "message": "License updated successfully",
+            "expiration": expiry,
+            "hardware_id": LicenseManager.get_hardware_id()
+        }
+    else:
+        return {
+            "success": False,
+            "message": f"Invalid Key: {msg}"
+        }
+
 from ..core.logger import log_manager
 
 @router.websocket("/ws/logs")

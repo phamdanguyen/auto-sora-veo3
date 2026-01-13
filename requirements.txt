@@ -14,3 +14,8 @@ setuptools
 curl_cffi
 dependency-injector
 pyjwt
+pytest
+pytest-asyncio
+pytest-cov
+pytest-mock
+httpx

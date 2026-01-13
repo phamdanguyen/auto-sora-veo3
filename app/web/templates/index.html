@@ -100,6 +100,19 @@
                         class="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap pointer-events-none">
                         Job Complete</div>
                 </a>
+
+                <a href="#" @click="currentTab = 'about'; fetchLicenseInfo()"
+                    :class="{'bg-blue-600': currentTab === 'about', 'hover:bg-gray-700': currentTab !== 'about', 'justify-center': sidebarCollapsed}"
+                    class="flex items-center p-3 rounded transition-colors duration-200 group relative">
+                    <svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <span :class="sidebarCollapsed ? 'hidden' : 'ml-3 whitespace-nowrap'">About</span>
+                    <div x-show="sidebarCollapsed"
+                        class="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap pointer-events-none">
+                        About</div>
+                </a>
             </nav>
             <div class="p-4 text-sm text-gray-500 border-t border-gray-700 bg-gray-900">
                 <div :class="sidebarCollapsed ? 'text-center text-xs' : ''"
@@ -624,8 +637,73 @@
                     </table>
                 </div>
             </div>
-
         </div>
+
+        <!-- About/License Tab -->
+        <div x-show="currentTab === 'about'" x-transition.opacity>
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-3xl font-bold text-gray-800">About & License</h2>
+            </div>
+
+            <div class="bg-white p-8 rounded-lg shadow-md max-w-2xl">
+                <div class="mb-6">
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">System Information</h3>
+                    <p class="text-gray-600">Uni-Video Automation v1.1.0</p>
+                    <p class="text-gray-500 text-sm mt-1">Automated Video Generation Tool powered by Sora.</p>
+                </div>
+
+                <hr class="my-6 border-gray-200">
+
+                <div class="mb-6">
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">License Status</h3>
+
+                    <div class="grid grid-cols-1 gap-4">
+                        <div class="bg-gray-50 p-4 rounded border border-gray-200">
+                            <span class="block text-xs uppercase text-gray-500 font-bold mb-1">Hardware ID (HWID)</span>
+                            <div class="flex items-center space-x-2">
+                                <code
+                                    class="text-sm font-mono bg-white px-2 py-1 rounded border border-gray-300 select-all"
+                                    x-text="licenseInfo.hardware_id || 'Loading...'"></code>
+                                <button
+                                    @click="navigator.clipboard.writeText(licenseInfo.hardware_id); showToast('Copied HWID', 'success')"
+                                    class="text-blue-600 text-xs hover:underline">Copy</button>
+                            </div>
+                        </div>
+
+                        <div class="bg-gray-50 p-4 rounded border border-gray-200">
+                            <span class="block text-xs uppercase text-gray-500 font-bold mb-1">Expiration Date</span>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-lg font-bold"
+                                    :class="licenseInfo.status === 'valid' ? 'text-green-600' : 'text-red-600'"
+                                    x-text="licenseInfo.expiration || 'Unknown'"></span>
+
+                                <span x-show="licenseInfo.status === 'valid'"
+                                    class="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full font-bold">ACTIVE</span>
+                                <span x-show="licenseInfo.status !== 'valid'"
+                                    class="text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded-full font-bold"
+                                    x-text="(licenseInfo.status || 'INVALID').toUpperCase()"></span>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1" x-text="licenseInfo.message"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-8">
+                    <h3 class="text-lg font-bold text-gray-800 mb-2">Update License Key</h3>
+                    <div class="flex space-x-2">
+                        <input type="text" x-model="newLicenseKey" placeholder="Paste new license key here..."
+                            class="flex-1 border p-2.5 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono text-sm">
+                        <button @click="updateLicense()"
+                            class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded shadow font-bold transition-colors">
+                            Activate
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
     </div>
 
 
@@ -1384,6 +1462,41 @@
                     });
                 },
 
+                licenseInfo: { status: 'loading', hardware_id: '', expiration: '', message: '' },
+                newLicenseKey: '',
+
+                async fetchLicenseInfo() {
+                    try {
+                        const res = await fetch('/api/license/info');
+                        this.licenseInfo = await res.json();
+                    } catch (e) {
+                        console.error(e);
+                        this.licenseInfo.message = "Failed to load license info.";
+                    }
+                },
+
+                async updateLicense() {
+                    if (!this.newLicenseKey) return;
+                    try {
+                        const res = await fetch('/api/license/update', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ key: this.newLicenseKey.trim() })
+                        });
+                        const data = await res.json();
+
+                        if (data.success) {
+                            alert("✅ License Updated Successfully!\n\nExpires: " + data.expiration);
+                            this.newLicenseKey = '';
+                            this.fetchLicenseInfo();
+                        } else {
+                            alert("❌ Update Failed:\n" + data.message);
+                        }
+                    } catch (e) {
+                        alert("Error: " + e);
+                    }
+                },
+
                 async openVideo(jobId) {
                     try {
                         const res = await fetch(`/api/jobs/${jobId}/open_video`, { method: 'POST' });
@@ -1393,6 +1506,7 @@
                         }
                     } catch (e) {
                         alert("Error: " + e);
+
                     }
                 },
 

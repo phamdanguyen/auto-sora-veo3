@@ -17,10 +17,13 @@ from ..database import SessionLocal
 from .repositories.account_repo import AccountRepository
 from .repositories.job_repo import JobRepository
 
-# NOTE: Services và Workers sẽ được add ở Phase 2 và Phase 3
-# from .services.account_service import AccountService
-# from .services.job_service import JobService
-# from .workers.generate_worker import GenerateWorker
+# Services (Phase 2)
+from .services.account_service import AccountService
+from .services.job_service import JobService
+from .services.task_service import TaskService
+
+# Workers (Phase 3)
+from .workers import GenerateWorker, PollWorker, DownloadWorker, WorkerManager
 
 
 class Container(containers.DeclarativeContainer):
@@ -65,49 +68,50 @@ class Container(containers.DeclarativeContainer):
     )
 
     # ========== Services (Phase 2) ==========
-    # account_service = providers.Factory(
-    #     AccountService,
-    #     account_repo=account_repository,
-    #     driver_factory=driver_factory
-    # )
+    account_service = providers.Factory(
+        AccountService,
+        account_repo=account_repository,
+        driver_factory=driver_factory
+    )
 
-    # job_service = providers.Factory(
-    #     JobService,
-    #     job_repo=job_repository,
-    #     account_repo=account_repository
-    # )
+    job_service = providers.Factory(
+        JobService,
+        job_repo=job_repository,
+        account_repo=account_repository
+    )
 
-    # task_service = providers.Factory(
-    #     TaskService,
-    #     job_repo=job_repository,
-    #     account_repo=account_repository
-    # )
+    task_service = providers.Factory(
+        TaskService,
+        job_repo=job_repository,
+        account_repo=account_repository
+    )
 
     # ========== Workers (Phase 3) ==========
-    # generate_worker = providers.Factory(
-    #     GenerateWorker,
-    #     job_repo=job_repository,
-    #     account_repo=account_repository,
-    #     driver_factory=driver_factory
-    # )
+    generate_worker = providers.Factory(
+        GenerateWorker,
+        job_repo=job_repository,
+        account_repo=account_repository,
+        driver_factory=driver_factory
+    )
 
-    # poll_worker = providers.Factory(
-    #     PollWorker,
-    #     job_repo=job_repository,
-    #     driver_factory=driver_factory
-    # )
+    poll_worker = providers.Factory(
+        PollWorker,
+        job_repo=job_repository,
+        account_repo=account_repository,
+        driver_factory=driver_factory
+    )
 
-    # download_worker = providers.Factory(
-    #     DownloadWorker,
-    #     job_repo=job_repository
-    # )
+    download_worker = providers.Factory(
+        DownloadWorker,
+        job_repo=job_repository
+    )
 
-    # worker_manager = providers.Singleton(
-    #     WorkerManager,
-    #     job_repo=job_repository,
-    #     account_repo=account_repository,
-    #     driver_factory=driver_factory
-    # )
+    worker_manager = providers.Singleton(
+        WorkerManager,
+        job_repo=job_repository,
+        account_repo=account_repository,
+        driver_factory=driver_factory
+    )
 
 
 # Global container instance

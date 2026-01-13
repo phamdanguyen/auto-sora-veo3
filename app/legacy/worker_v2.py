@@ -6,13 +6,13 @@ REFACTORED: Multi-account parallel processing with per-account rate limiting
 import asyncio
 from sqlalchemy.orm import Session
 from .. import models, database
-from . import account_manager
-from .drivers.sora import SoraDriver
-from .drivers.sora.exceptions import QuotaExhaustedException, VerificationRequiredException
-from .task_manager import task_manager
-from .download_utils import download_from_url
-from .security import decrypt_password
-from .progress_tracker import tracker
+from app.core import account_manager
+from app.core.drivers.sora import SoraDriver
+from app.core.drivers.sora.exceptions import QuotaExhaustedException, VerificationRequiredException
+from app.core.task_manager import task_manager
+from app.core.download_utils import download_from_url
+from app.core.security import decrypt_password
+from app.core.progress_tracker import tracker
 import logging
 import traceback
 import json

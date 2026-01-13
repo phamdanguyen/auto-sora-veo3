@@ -1,4 +1,4 @@
-from ..base import BaseDriver
+from ..abstractions import BrowserBasedDriver, VideoResult, CreditsInfo, UploadResult, VideoData, PendingTask
 from .pages.login import SoraLoginPage
 from .pages.creation import SoraCreationPage
 from .pages.drafts import SoraDraftsPage
@@ -14,7 +14,7 @@ from typing import Optional, Callable, Awaitable
 
 logger = logging.getLogger(__name__)
 
-class SoraDriver(BaseDriver):
+class SoraDriver(BrowserBasedDriver):
     def __init__(self, headless: bool = False, proxy: Optional[str] = None, user_data_dir: Optional[str] = None, channel: str = "chrome"):
         super().__init__(headless=headless, proxy=proxy, user_data_dir=user_data_dir, channel=channel)
         # Use direct auth URL for reliable login flow
@@ -28,7 +28,77 @@ class SoraDriver(BaseDriver):
         self.verification_page = None
 
     async def start(self):
-        await super().start()
+        """Start browser and initialize driver"""
+        from playwright.async_api import async_playwright
+
+        # Initialize Playwright
+        self.playwright = await async_playwright().start()
+
+        # Configure proxy
+        proxy_config = None
+        if self.proxy:
+            # Parse proxy string ip:port:user:pass
+            parts = self.proxy.split(':')
+            if len(parts) == 4:
+                proxy_config = {
+                    "server": f"http://{parts[0]}:{parts[1]}",
+                    "username": parts[2],
+                    "password": parts[3]
+                }
+            elif len(parts) == 2:
+                 proxy_config = {
+                    "server": f"http://{parts[0]}:{parts[1]}"
+                }
+
+        # Launch args to bypass detection
+        args = [
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox",
+            "--disable-infobars",
+            "--disable-dev-shm-usage",
+            "--disable-extensions",
+            "--disable-gpu",
+        ]
+
+        # Use provided profile dir or default
+        profile_path = self.user_data_dir if self.user_data_dir else "./data/browser_profile"
+        logger.info(f"Launching Browser with Profile Path: {profile_path}")
+
+        if not os.path.exists(profile_path):
+            os.makedirs(profile_path)
+
+        # Launch browser
+        self.browser = await self.playwright.chromium.launch(
+            headless=self.headless,
+            channel=self.channel,
+            args=args,
+        )
+
+        # Create browser context
+        self.context = await self.browser.new_context(
+            accept_downloads=True,
+            ignore_https_errors=True,
+            locale="en-US",
+            timezone_id="America/New_York",
+            proxy=proxy_config,
+            permissions=["geolocation", "clipboard-read", "clipboard-write"],
+            geolocation={"latitude": 40.7128, "longitude": -74.0060},
+            color_scheme="dark",
+            viewport={"width": 1280, "height": 720},
+            storage_state=None
+        )
+
+        self.page = await self.context.new_page()
+
+        # Add stealth script
+        await self.page.add_init_script("""
+            if (Object.getOwnPropertyDescriptor(navigator, 'webdriver') === undefined) {
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+            }
+        """)
+
         # Setup Hybrid Interception
         self.latest_access_token = None
         self.latest_user_agent = None
@@ -36,7 +106,7 @@ class SoraDriver(BaseDriver):
         self.intercepted_videos = {} # ID -> {status, url, ...}
         self.last_submission_result = None # Latest nf/create response
         await self._setup_interception()
-        
+
         self.login_page = SoraLoginPage(self.page)
         self.creation_page = SoraCreationPage(self.page)
         self.drafts_page = SoraDraftsPage(self.page)
@@ -57,6 +127,55 @@ class SoraDriver(BaseDriver):
         self.drafts_page = SoraDraftsPage(self.page)
         self.download_page = SoraDownloadPage(self.page)
         self.verification_page = SoraVerificationPage(self.page)
+
+    async def wait_for_login(self, timeout: int = 300) -> Optional[str]:
+        """
+        Waits for user to manually login and captures the email.
+        
+        Args:
+            timeout: Max seconds to wait
+            
+        Returns:
+            Detected email string if successful, None otherwise.
+        """
+        logger.info(f"👤 Waiting for USER to login (max {timeout}s)...")
+        
+        # Navigate to login if not already there
+        if "auth/login" not in self.page.url and "sora" not in self.page.url:
+             await self.page.goto(self.base_url, wait_until="domcontentloaded")
+
+        start_time = time.time()
+        poll_interval = 2
+        
+        import jwt
+        
+        while time.time() - start_time < timeout:
+            if self.latest_access_token:
+                # Try to decode email
+                try:
+                    token_str = self.latest_access_token
+                    if token_str.lower().startswith("bearer "):
+                        token_str = token_str[7:]
+                    
+                    decoded = jwt.decode(token_str, options={"verify_signature": False})
+                    
+                    email = None
+                    if "email" in decoded:
+                        email = decoded["email"]
+                    elif "https://api.openai.com/profile" in decoded:
+                        email = decoded["https://api.openai.com/profile"].get("email")
+                    elif "user" in decoded and isinstance(decoded["user"], dict):
+                        email = decoded["user"].get("email")
+                        
+                    if email:
+                        logger.info(f"✨ Token captured for email: {email}")
+                        return email
+                except Exception as e:
+                    pass
+
+            await asyncio.sleep(poll_interval)
+            
+        return None
 
     @classmethod
     async def api_only(cls, access_token: str, device_id: str = None, user_agent: str = None, cookies: list = None):
@@ -103,10 +222,13 @@ class SoraDriver(BaseDriver):
         return driver
     
     async def stop(self):
-        """Stop driver - handles both browser and API-only modes"""
+        """Stop driver and cleanup resources"""
+        if self.context:
+            await self.context.close()
         if self.browser:
-            await super().stop()
-        # API-only mode has nothing to close
+            await self.browser.close()
+        if self.playwright:
+            await self.playwright.stop()
 
     def get_cached_video(self, video_id: str) -> Optional[dict]:
         """Get video info from interception cache"""
@@ -136,17 +258,26 @@ class SoraDriver(BaseDriver):
         """Callback for every request"""
         try:
             url = request.url
-            if "sora.chatgpt.com" in url or "chatgpt.com/backend-api" in url:
+            # Widen scope to capture token from ANY OpenAI/ChatGPT endpoint
+            if "openai.com" in url or "chatgpt.com" in url:
                 # print(f"🕵️ INTERCEPTED URL: {url}") # Explicit print to see in console
                 headers = request.headers
-                if "authorization" in headers:
-                    token = headers["authorization"]
-                    if token.startswith("Bearer "):
-                        if self.latest_access_token != token:
-                            logger.info(f"[TOKEN]  Captured NEW Access Token! ({token[:15]}...)")
-                            self.latest_access_token = token
-                            if "user-agent" in headers:
-                                self.latest_user_agent = headers["user-agent"]
+                
+                # Check for standard Authorization header (case-insensitive in Playwright headers)
+                # Playwright headers are lowercase
+                token = headers.get("authorization")
+                
+                if token and token.startswith("Bearer "):
+                    if self.latest_access_token != token:
+                        logger.info(f"[TOKEN]  Captured NEW Access Token! ({token[:15]}...) via {url}")
+                        self.latest_access_token = token
+                        
+                        # Also capture User-Agent from this request if available
+                        if "user-agent" in headers:
+                            self.latest_user_agent = headers["user-agent"]
+                            
+        except Exception as e:
+            pass # Don't crash on intercept
         except Exception as e:
             pass # Don't crash on intercept
 
@@ -1253,6 +1384,165 @@ class SoraDriver(BaseDriver):
             return True # Fail open to avoid stopping automation on unrelated errors verification logic should be robust
             
         return True
+
+    # ========== VideoGenerationDriver Interface Implementation ==========
+    # Wrapper methods to match abstract interface
+
+    async def generate_video(
+        self,
+        prompt: str,
+        duration: int,
+        aspect_ratio: str,
+        image_path: Optional[str] = None
+    ) -> VideoResult:
+        """
+        Generate video - implements VideoGenerationDriver interface
+
+        Args:
+            prompt: Text prompt for video generation
+            duration: Duration in seconds (5, 10, or 15)
+            aspect_ratio: Aspect ratio ("16:9", "9:16", "1:1")
+            image_path: Optional path to image for image-to-video
+
+        Returns:
+            VideoResult with task_id if successful
+        """
+        # Map duration to n_frames
+        duration_to_frames = {5: 150, 10: 300, 15: 450}
+        n_frames = duration_to_frames.get(duration, 180)
+
+        # Map aspect ratio to orientation
+        if aspect_ratio == "16:9":
+            orientation = "landscape"
+        elif aspect_ratio == "9:16":
+            orientation = "portrait"
+        else:
+            orientation = "landscape"  # Default
+
+        # Upload image if provided
+        file_id = None
+        if image_path:
+            upload_result = await self.upload_image(image_path)
+            if not upload_result.success:
+                return VideoResult(success=False, error=upload_result.error)
+            file_id = upload_result.file_id
+
+        # Call internal API method
+        result = await self.generate_video_api(
+            prompt=prompt,
+            orientation=orientation,
+            n_frames=n_frames,
+            image_file_id=file_id
+        )
+
+        # Convert dict to VideoResult
+        return VideoResult(
+            success=result.get("success", False),
+            task_id=result.get("task_id"),
+            error=result.get("error")
+        )
+
+    async def get_credits(self) -> CreditsInfo:
+        """
+        Get credits information - implements VideoGenerationDriver interface
+
+        Returns:
+            CreditsInfo with credits remaining
+        """
+        result = await self.get_credits_api()
+
+        if result is None:
+            return CreditsInfo(credits=None, error="No access token")
+
+        if "error" in result:
+            return CreditsInfo(
+                credits=None,
+                error_code=result.get("error_code"),
+                error=result.get("error")
+            )
+
+        return CreditsInfo(
+            credits=result.get("credits"),
+            reset_seconds=result.get("reset_seconds")
+        )
+
+    async def upload_image(self, image_path: str) -> UploadResult:
+        """
+        Upload image for video generation - implements VideoGenerationDriver interface
+
+        Args:
+            image_path: Path to image file
+
+        Returns:
+            UploadResult with file_id if successful
+        """
+        result = await self.upload_image_api(image_path)
+
+        return UploadResult(
+            success=result.get("success", False),
+            file_id=result.get("file_id"),
+            error=result.get("error")
+        )
+
+    async def wait_for_completion(
+        self,
+        task_id: str,
+        timeout: int = 300,
+        poll_interval: int = 10
+    ) -> Optional[VideoData]:
+        """
+        Wait for video generation to complete - implements VideoGenerationDriver interface
+
+        Args:
+            task_id: Task ID to wait for
+            timeout: Max wait time in seconds
+            poll_interval: Seconds between polls (not used in internal implementation)
+
+        Returns:
+            VideoData when complete, None if timeout
+        """
+        result = await self.wait_for_completion_api(
+            match_prompt="",  # Not needed when task_id provided
+            timeout=timeout,
+            task_id=task_id
+        )
+
+        if result is None:
+            return None
+
+        if result.get("status") == "failed":
+            return None
+
+        return VideoData(
+            id=result.get("id", ""),
+            download_url=result.get("download_url", ""),
+            status=result.get("status", "completed"),
+            progress_pct=None
+        )
+
+    async def get_pending_tasks(self) -> list:
+        """
+        Get list of pending generation tasks - implements VideoGenerationDriver interface
+
+        Returns:
+            List of PendingTask objects
+        """
+        result = await self.get_pending_tasks_api()
+
+        if result is None:
+            return []
+
+        # Convert dicts to PendingTask objects
+        tasks = []
+        for task_dict in result:
+            tasks.append(PendingTask(
+                id=task_dict.get("id", ""),
+                status=task_dict.get("status", ""),
+                progress_pct=task_dict.get("progress_pct"),
+                created_at=task_dict.get("created_at")
+            ))
+
+        return tasks
 
     async def login(self, email: Optional[str] = None, password: Optional[str] = None, cookies: Optional[dict] = None) -> dict:
         await self.start()
