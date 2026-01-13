@@ -66,7 +66,8 @@ class GenerateWorker(BaseWorker):
                 platform=account.platform,
                 access_token=account.session.access_token,
                 device_id=account.session.device_id,
-                user_agent=account.session.user_agent
+                user_agent=account.session.user_agent,
+                headless=True  # Ensure headless mode
             )
 
             try:

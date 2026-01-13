@@ -62,6 +62,43 @@ class SimpleTaskManager:
             logger.warning(f"[WARNING]  FORCE RESET: Clearing {len(self._active_job_ids)} active job IDs.")
             self._active_job_ids.clear()
 
+    def _get_job_id_val(self, job) -> int:
+        """Helper to get integer ID from Job object or int"""
+        if hasattr(job, "id") and hasattr(job.id, "value"):
+            return job.id.value
+        if hasattr(job, "id"):
+             return job.id
+        return job
+
+    def _get_job_status_val(self, job) -> str:
+        """Helper to get status string from Job object"""
+        if hasattr(job, "progress") and hasattr(job.progress, "status"):
+            # Domain model
+            if hasattr(job.progress.status, "value"):
+                 return job.progress.status.value
+            return str(job.progress.status)
+        # Legacy or direct dict
+        return job.status
+
+    def _update_job_status(self, job, status: str, error: str = None):
+         """Helper to update job status on Domain Object"""
+         from .domain.job import JobStatus
+         # Convert string to Enum
+         try:
+             enum_status = JobStatus(status)
+         except:
+             logger.error(f"Invalid status string: {status}")
+             enum_status = status
+         
+         if hasattr(job, "progress"):
+             job.progress.status = enum_status
+             if error:
+                 job.progress.error_message = error
+         else:
+             job.status = status
+             if error:
+                 job.error_message = error
+
     @property
     def is_paused(self) -> bool:
         return self._paused
@@ -166,7 +203,9 @@ class SimpleTaskManager:
             job: Job model instance
         """
         try:
-            logger.info(f"[START]  Starting job #{job.id} (current status: {job.status})")
+            job_id = self._get_job_id_val(job)
+            current_status = self._get_job_status_val(job)
+            logger.info(f"[START]  Starting job #{job_id} (current status: {current_status})")
             
             # Validate status transition
             self._validate_job_status_transition(job, "processing")
@@ -174,36 +213,39 @@ class SimpleTaskManager:
             # Initialize task state in job using default state
             task_state = self._default_state()
 
-            job.task_state = json.dumps(task_state)
-            job.status = "processing"
+            # Domain Model: task_state is dict
+            job.task_state = task_state
+            
+            self._update_job_status(job, "processing")
             job.updated_at = datetime.utcnow()  # Explicit timestamp update
             
             # Add to generate queue
+            # Add to generate queue
             task = TaskContext(
-                job_id=job.id,
+                job_id=job_id,
                 task_type="generate",
                 input_data={
-                    "prompt": job.prompt,
-                    "duration": job.duration,
+                    "prompt": job.spec.prompt,
+                    "duration": job.spec.duration,
                     "account_id": job.account_id
                 }
             )
             
             # Add to active set
-            if job.id in self._active_job_ids:
-                 logger.warning(f"[WARNING]  Job #{job.id} is already active in TaskManager. Skipping start_job.")
+            if job_id in self._active_job_ids:
+                 logger.warning(f"[WARNING]  Job #{job_id} is already active in TaskManager. Skipping start_job.")
                  return
 
-            self._active_job_ids.add(job.id)
+            self._active_job_ids.add(job_id)
 
             await self.generate_queue.put(task)
-            logger.info(f"[OK]  Job #{job.id} added to generate queue (queue size: {self.generate_queue.qsize()})")
+            logger.info(f"[OK]  Job #{job_id} added to generate queue (queue size: {self.generate_queue.qsize()})")
             
         except ValueError as e:
-            logger.error(f"[ERROR]  Failed to start job #{job.id}: {e}")
+            logger.error(f"[ERROR]  Failed to start job #{self._get_job_id_val(job)}: {e}")
             raise
         except Exception as e:
-            logger.error(f"[ERROR]  Unexpected error starting job #{job.id}: {e}")
+            logger.error(f"[ERROR]  Unexpected error starting job #{self._get_job_id_val(job)}: {e}")
             raise
     
     async def complete_submit(self, job, account_id: int, credits_before: int, credits_after: int):
@@ -230,7 +272,7 @@ class SimpleTaskManager:
         state["tasks"]["poll"] = {"status": "pending"}
         state["current_task"] = "poll"
         
-        job.task_state = json.dumps(state)
+        job.task_state = state
         job.updated_at = datetime.utcnow()  # Explicit timestamp update
 
         # Add to poll queue
@@ -268,8 +310,11 @@ class SimpleTaskManager:
         }
         state["current_task"] = "download"
 
-        job.task_state = json.dumps(state)
-        job.video_url = video_url
+        job.task_state = state
+        if hasattr(job, "result"):
+             job.result.video_url = video_url
+        else:
+             job.video_url = video_url
         job.updated_at = datetime.utcnow()  # Explicit timestamp update
 
         # Add to download queue
@@ -307,8 +352,11 @@ class SimpleTaskManager:
         }
         state["current_task"] = "download"
         
-        job.task_state = json.dumps(state)
-        job.video_url = video_url  # Save URL for reference
+        job.task_state = state
+        if hasattr(job, "result"):
+             job.result.video_url = video_url
+        else:
+             job.video_url = video_url
         job.updated_at = datetime.utcnow()  # Explicit timestamp update
 
         # Add to download queue
@@ -344,15 +392,18 @@ class SimpleTaskManager:
         # Validate status transition before changing
         self._validate_job_status_transition(job, "done")
 
-        job.status = "done"
-        job.local_path = local_path
-        job.task_state = json.dumps(state)
+        self._update_job_status(job, "done")
+        if hasattr(job, "result"):
+             job.result.local_path = local_path
+        else:
+             job.local_path = local_path
+        job.task_state = state
         job.updated_at = datetime.utcnow()  # Explicit timestamp update
 
-        logger.info(f"[OK]  Job #{job.id} completed! Video at {local_path} ({file_size:,} bytes)")
+        logger.info(f"[OK]  Job #{self._get_job_id_val(job)} completed! Video at {local_path} ({file_size:,} bytes)")
         
         # Remove from active set
-        self._active_job_ids.discard(job.id)
+        self._active_job_ids.discard(self._get_job_id_val(job))
     
     async def fail_task(self, job, task_type: str, error: str):
         """
@@ -376,7 +427,7 @@ class SimpleTaskManager:
             task_state["last_error"] = error
             state["tasks"][task_type] = task_state
 
-            job.task_state = json.dumps(state)
+            job.task_state = state
             job.updated_at = datetime.utcnow()  # Explicit timestamp update
             
             # Re-add to appropriate queue
@@ -385,24 +436,28 @@ class SimpleTaskManager:
             # Get input data from state or job
             if task_type == "generate":
                 input_data = {
-                    "prompt": job.prompt,
-                    "duration": job.duration,
+                    "prompt": job.spec.prompt,
+                    "duration": job.spec.duration,
                     "account_id": job.account_id
                 }
             elif task_type == "download":
-                input_data = task_state.get("input", {"video_url": job.video_url})
+                if hasattr(job, "result"):
+                     video_url = job.result.video_url
+                else:
+                     video_url = job.video_url
+                input_data = task_state.get("input", {"video_url": video_url})
             else:
                 input_data = task_state.get("input", {})
             
             task = TaskContext(
-                job_id=job.id,
+                job_id=self._get_job_id_val(job),
                 task_type=task_type,
                 input_data=input_data,
                 retry_count=retry_count
             )
             await queue.put(task)
             
-            logger.warning(f"[WARNING]  Job #{job.id} {task_type} failed, retry {retry_count}/{max_retries}: {error}")
+            logger.warning(f"[WARNING]  Job #{self._get_job_id_val(job)} {task_type} failed, retry {retry_count}/{max_retries}: {error}")
         else:
             # Max retries reached - fail job
             task_state["status"] = "failed"
@@ -412,15 +467,14 @@ class SimpleTaskManager:
             # Validate status transition before changing
             self._validate_job_status_transition(job, "failed")
 
-            job.status = "failed"
-            job.error_message = f"{task_type} failed after {max_retries} retries: {error}"
-            job.task_state = json.dumps(state)
+            self._update_job_status(job, "failed", f"{task_type} failed after {max_retries} retries: {error}")
+            job.task_state = state
             job.updated_at = datetime.utcnow()  # Explicit timestamp update
 
-            logger.error(f"[ERROR]  Job #{job.id} failed permanently: {task_type} - {error}")
+            logger.error(f"[ERROR]  Job #{self._get_job_id_val(job)} failed permanently: {task_type} - {error}")
             
             # Remove from active set
-            self._active_job_ids.discard(job.id)
+            self._active_job_ids.discard(self._get_job_id_val(job))
     
     def _default_state(self):
         """Default task state structure"""
@@ -437,12 +491,16 @@ class SimpleTaskManager:
     async def get_job_state(self, job) -> dict:
         """Get parsed task state from job"""
         if job.task_state:
+            # Domain model uses dict, legacy might use string
+            if isinstance(job.task_state, dict):
+                return self._validate_and_fix_state(job.task_state)
+            
             try:
                 state = json.loads(job.task_state)
                 # Validate and fix state if needed
                 return self._validate_and_fix_state(state)
             except json.JSONDecodeError:
-                logger.error(f"Invalid JSON in job #{job.id} task_state, using default")
+                logger.error(f"Invalid JSON in job #{self._get_job_id_val(job)} task_state, using default")
                 return self._default_state()
         return self._default_state()
 
@@ -487,7 +545,8 @@ class SimpleTaskManager:
         Raises:
             ValueError: If transition is invalid
         """
-        current_status = job.status
+
+        current_status = self._get_job_status_val(job)
         valid_transitions = VALID_JOB_TRANSITIONS.get(current_status, [])
 
         # Special case: allow failed → pending only if explicitly allowed (retry)
@@ -511,8 +570,8 @@ class SimpleTaskManager:
         Useful if a submitted job got stuck or download failed
         """
         # Ensure job is marked as processing
-        if job.status == "pending":
-            job.status = "processing"
+        if self._get_job_status_val(job) == "pending":
+            self._update_job_status(job, "processing")
             job.updated_at = datetime.utcnow()
 
         # Await the coroutine
@@ -526,21 +585,26 @@ class SimpleTaskManager:
             state["current_task"] = "download"
             job.task_state = json.dumps(state)
             
+            if hasattr(job, "result"):
+                 video_url = job.result.video_url
+            else:
+                 video_url = job.video_url
+
             task = TaskContext(
-                job_id=job.id,
+                job_id=self._get_job_id_val(job),
                 task_type="download",
-                input_data={"video_url": job.video_url}
+                input_data={"video_url": video_url}
             )
             await self.download_queue.put(task)
             
         elif gen_status in ["submitted", "completed"]:
             # Generation done/submitted, but no URL -> Retry Poll
-            logger.info(f"[MONITOR]  Retrying Poll for Job #{job.id}")
+            logger.info(f"[MONITOR]  Retrying Poll for Job #{self._get_job_id_val(job)}")
             state["tasks"]["poll"]["status"] = "pending"
             state["tasks"]["poll"]["retry_count"] = 0  # Reset retry count
             state["tasks"]["poll"]["last_error"] = None # Clear error
             state["current_task"] = "poll"
-            job.task_state = json.dumps(state)
+            job.task_state = state
             
             # Need account status from state
             acct_id = state["tasks"]["generate"].get("account_id")
@@ -549,7 +613,7 @@ class SimpleTaskManager:
                 acct_id = job.account_id
                 
             task = TaskContext(
-                job_id=job.id,
+                job_id=self._get_job_id_val(job),
                 task_type="poll",
                 input_data={
                     "account_id": acct_id,
@@ -559,7 +623,7 @@ class SimpleTaskManager:
             )
             await self.poll_queue.put(task)
         else:
-            logger.warning(f"[WARNING]  Job #{job.id} not in a state to retry subtasks (Gen Status: {gen_status})")
+            logger.warning(f"[WARNING]  Job #{self._get_job_id_val(job)} not in a state to retry subtasks (Gen Status: {gen_status})")
 
 # Global instance
 task_manager = SimpleTaskManager()

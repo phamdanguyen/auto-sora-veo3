@@ -15,8 +15,15 @@ from typing import Optional, Callable, Awaitable
 logger = logging.getLogger(__name__)
 
 class SoraDriver(BrowserBasedDriver):
-    def __init__(self, headless: bool = False, proxy: Optional[str] = None, user_data_dir: Optional[str] = None, channel: str = "chrome"):
+    def __init__(self, headless: bool = False, proxy: Optional[str] = None, user_data_dir: Optional[str] = None, channel: str = "chrome", access_token: str = None, device_id: str = None, user_agent: str = None, cookies: list = None):
         super().__init__(headless=headless, proxy=proxy, user_data_dir=user_data_dir, channel=channel)
+        
+        # Store auth data if provided (Hybrid/API support)
+        self.latest_access_token = access_token
+        self.device_id = device_id
+        self.latest_user_agent = user_agent
+        self.cookies = cookies or []
+
         # Use direct auth URL for reliable login flow
         self.base_url = "https://chatgpt.com/auth/login?next=%2Fsora%2F"
         
@@ -58,6 +65,8 @@ class SoraDriver(BrowserBasedDriver):
             "--disable-dev-shm-usage",
             "--disable-extensions",
             "--disable-gpu",
+            "--disable-web-security",
+            "--disable-site-isolation-trials",
         ]
 
         # Use provided profile dir or default
@@ -100,8 +109,12 @@ class SoraDriver(BrowserBasedDriver):
         """)
 
         # Setup Hybrid Interception
-        self.latest_access_token = None
-        self.latest_user_agent = None
+        # Preserve injected tokens if available
+        if not hasattr(self, 'latest_access_token') or self.latest_access_token is None:
+            self.latest_access_token = None
+        if not hasattr(self, 'latest_user_agent') or self.latest_user_agent is None:
+             self.latest_user_agent = None
+             
         self.latest_intercepted_data = None
         self.intercepted_videos = {} # ID -> {status, url, ...}
         self.last_submission_result = None # Latest nf/create response
@@ -1037,8 +1050,67 @@ class SoraDriver(BrowserBasedDriver):
         ext = os.path.splitext(image_path)[1].lower()
         mime_type = "image/jpeg" if ext in [".jpg", ".jpeg"] else "image/png"
         
+        # Try curl_cffi FIRST (More robust, bypasses Browser CORS)
         try:
-            if self.page:
+            from curl_cffi import requests as curl_requests
+            
+            # Use curl_cffi (Stronger bypass)
+            cookie_str = ""
+            if hasattr(self, 'cookies') and self.cookies:
+                cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in self.cookies])
+
+            headers = {
+                "Authorization": self.latest_access_token,
+                "User-Agent": self.latest_user_agent or "Mozilla/5.0",
+                "Cookie": cookie_str,
+                "Origin": "https://sora.chatgpt.com",
+                "Referer": "https://sora.chatgpt.com/"
+            }
+            
+            try:
+                import urllib3
+                with open(image_path, 'rb') as f:
+                    file_content = f.read()
+                    
+                # Manual Multipart Encoding
+                # fields = {'name': (filename, data, content_type)}
+                fields = {
+                    'file': (filename, file_content, mime_type)
+                }
+                
+                body, content_type = urllib3.encode_multipart_formdata(fields)
+                headers["Content-Type"] = content_type
+                
+                logger.info(f"🔌 Uploading with curl_cffi (Priority)...")
+                # payload must be passed as 'data' (bytes)
+                response = curl_requests.post(
+                    "https://sora.chatgpt.com/backend/project_y/file/upload",
+                    headers=headers,
+                    data=body,
+                    impersonate="chrome",
+                    timeout=60
+                )
+                
+                if response.status_code == 200:
+                    data = json.loads(response.text)
+                    logger.info(f"[OK]  Image uploaded (curl): file_id={data.get('file_id', 'unknown')[:30]}...")
+                    return {
+                        "success": True,
+                        "file_id": data.get('file_id'),
+                        "url": data.get('url'),
+                        "asset_pointer": data.get('asset_pointer')
+                    }
+                else:
+                    logger.warning(f"[WARNING] curl upload failed ({response.status_code}), falling back to browser/aiohttp: {response.text[:100]}")
+                    # Fallthrough to browser/aiohttp
+            except Exception as e:
+                 logger.warning(f"[WARNING] curl upload exception: {e}")
+                 # Fallthrough
+        except ImportError:
+            pass
+
+        # Fallback 1: Browser Fetch (if page exists)
+        if self.page:
                 # Browser mode
                 import base64
                 with open(image_path, "rb") as f:
@@ -1075,59 +1147,9 @@ class SoraDriver(BrowserBasedDriver):
                 }}
                 """
                 result = await self.page.evaluate(js_code)
-            else:
-                # API-only mode
-                use_curl = False
-                try:
-                    from curl_cffi import requests as curl_requests
-                    use_curl = True
-                except ImportError:
-                    pass
-
-                if use_curl:
-                    # Use curl_cffi (Stronger bypass)
-                    cookie_str = ""
-                    if hasattr(self, 'cookies') and self.cookies:
-                        cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in self.cookies])
-
-                    headers = {
-                        "Authorization": self.latest_access_token,
-                        "User-Agent": self.latest_user_agent or "Mozilla/5.0",
-                        "Cookie": cookie_str,
-                        "Origin": "https://sora.chatgpt.com",
-                        "Referer": "https://sora.chatgpt.com/"
-                    }
-                    
-                    try:
-                        import urllib3
-                        with open(image_path, 'rb') as f:
-                            file_content = f.read()
-                            
-                        # Manual Multipart Encoding
-                        # fields = {'name': (filename, data, content_type)}
-                        fields = {
-                            'file': (filename, file_content, mime_type)
-                        }
-                        
-                        body, content_type = urllib3.encode_multipart_formdata(fields)
-                        headers["Content-Type"] = content_type
-                        
-                        logger.info(f"🔌 Uploading with curl_cffi (Manual Multipart)...")
-                        # payload must be passed as 'data' (bytes)
-                        response = curl_requests.post(
-                            "https://sora.chatgpt.com/backend/project_y/file/upload",
-                            headers=headers,
-                            data=body,
-                            impersonate="chrome",
-                            timeout=60
-                        )
-                        result = {"status": response.status_code, "body": response.text}
-                    except Exception as e:
-                        logger.error(f"[ERROR]  curl_cffi upload failed: {e}", exc_info=True)
-                        result = {"status": 0, "error": str(e)}
-
-                else:
-                    # Fallback to aiohttp (Weaker)
+        else:
+             # Fallback 2: aiohttp
+             # Fallback to aiohttp (Weaker)
                     import aiohttp
                     async with aiohttp.ClientSession() as session:
                         data = aiohttp.FormData()
@@ -1136,9 +1158,6 @@ class SoraDriver(BrowserBasedDriver):
                                        filename=filename,
                                        content_type=mime_type)
                         
-                        # Note: formatting cookies for aiohttp manual header if needed, 
-                        # but aiohttp usually prefers cookie_jar. 
-                        # For now, let's just stick to Authorization since curl is primary.
                         headers = {
                             "Authorization": self.latest_access_token,
                             "User-Agent": self.latest_user_agent or "Mozilla/5.0"
@@ -1151,17 +1170,18 @@ class SoraDriver(BrowserBasedDriver):
                         ) as response:
                             text = await response.text()
                             result = {"status": response.status, "body": text}
-            
-            if result.get('status') == 200:
+        
+        # Process result from Browser/Aiohttp
+        if result.get('status') == 200:
                 data = json.loads(result['body'])
-                logger.info(f"[OK]  Image uploaded: file_id={data.get('file_id', 'unknown')[:30]}...")
+                logger.info(f"[OK]  Image uploaded (fallback): file_id={data.get('file_id', 'unknown')[:30]}...")
                 return {
                     "success": True,
                     "file_id": data.get('file_id'),
                     "url": data.get('url'),
                     "asset_pointer": data.get('asset_pointer')
                 }
-            else:
+        else:
                 return {"success": False, "error": result.get('body', result.get('error'))}
                 
         except Exception as e:

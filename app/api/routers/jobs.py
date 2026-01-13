@@ -76,7 +76,7 @@ class JobResponse(BaseModel):
             video_url=job.result.video_url if job.result else None,
             local_path=job.result.local_path if job.result else None,
             video_id=job.result.video_id if job.result else None,
-            account_id=job.account_id.value if job.account_id else None,
+            account_id=job.account_id.value if hasattr(job.account_id, "value") else job.account_id,
             task_state=str(job.task_state) if job.task_state else None,
             progress_message=None,
             retry_count=job.progress.retry_count if job.progress else 0,
@@ -288,7 +288,8 @@ async def cancel_job(
 @router.post("/bulk_action")
 async def bulk_job_action(
     req: BulkActionRequest,
-    service: JobService = Depends(get_job_service)
+    service: JobService = Depends(get_job_service),
+    task_service: TaskService = Depends(get_task_service)
 ):
     """
     Perform bulk action on multiple jobs
@@ -327,7 +328,19 @@ async def bulk_job_action(
                 results.append({"job_id": job_id, "ok": False, "error": str(e)})
         return {"ok": True, "results": results}
 
+    elif req.action in ["start", "start_selected", "start_all"]:
+        results = []
+        for job_id in req.job_ids:
+            try:
+                await task_service.start_job(job_id)
+                results.append({"job_id": job_id, "ok": True})
+            except Exception as e:
+                logger.error(f"Failed to start job {job_id}: {e}")
+                results.append({"job_id": job_id, "ok": False, "error": str(e)})
+        return {"ok": True, "results": results}
+
     else:
+        logger.warning(f"Invalid bulk action: {req.action}")
         raise HTTPException(status_code=400, detail=f"Invalid action: {req.action}")
 
 
