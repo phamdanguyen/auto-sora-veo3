@@ -11,11 +11,14 @@ import datetime
 def create_mock_job_for_download():
     db = database.SessionLocal()
     try:
-        # Find a live account
-        account = db.query(models.Account).filter(models.Account.status == 'live').first()
+        # Find a live account (using credits_remaining)
+        account = db.query(models.Account).filter(models.Account.credits_remaining > 0).first()
         if not account:
-            print("No live account found!")
-            return
+            # Fallback to any account if no credits, just for connection test
+            account = db.query(models.Account).first()
+            if not account:
+                print("No account found!")
+                return
 
         print(f"Using Account #{account.id} ({account.email})")
 
@@ -40,14 +43,19 @@ def create_mock_job_for_download():
 
         # Create Job
         job = models.Job(
-             prompt="Test Download Flow - Non Existent Video",
-             status="processing",
+             prompt="Test Download Flow - Watermark Removal",
+             status="processing", # MUST be processing to be picked up by worker manager loop
              account_id=account.id,
              created_at=datetime.datetime.utcnow(),
+             # Use a real sample video (small MP4). 
+             # Note: WatermarkRemover might expect it to have a specific watermark or just process any video.
+             # Ideally use one that is accessible. 
+             video_url="https://filesamples.com/samples/video/mp4/sample_640x360.mp4",
+             video_id="mock_video_id_123", # Add mock ID to trigger "attempt"
              task_state=json.dumps({
                  "tasks": {
-                     "generate": {"status": "completed"}, # Trick worker into thinking it's ready
-                     "download": {"status": "pending"}
+                     "generate": {"status": "completed", "progress": 100},
+                     "download": {"status": "pending", "progress": 0}
                  },
                  "resolution_retries": 0
              })

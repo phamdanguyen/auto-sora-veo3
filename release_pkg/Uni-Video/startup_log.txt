@@ -1,0 +1,10 @@
+2026-01-12 21:34:22 - === NEW STARTUP SESSION ===
+2026-01-12 21:34:22 - CWD: C:\Code\uni-video\release_pkg\Uni-Video
+2026-01-12 21:34:22 - Executable: C:\Code\uni-video\release_pkg\Uni-Video\Uni-Video.exe
+2026-01-12 21:34:22 - Running in FROZEN mode. MEIPASS: C:\Code\uni-video\release_pkg\Uni-Video\_internal
+2026-01-12 21:34:22 - Path: ['C:\\Code\\uni-video\\release_pkg\\Uni-Video\\_internal\\base_library.zip', 'C:\\Code\\uni-video\\release_pkg\\Uni-Video\\_internal\\python3.12\\lib-dynload', 'C:\\Code\\uni-video\\release_pkg\\Uni-Video\\_internal', 'C:\\Code\\uni-video\\release_pkg\\Uni-Video\\_internal\\setuptools\\_vendor']
+2026-01-12 21:35:18 - === NEW STARTUP SESSION ===
+2026-01-12 21:35:18 - CWD: C:\Code\uni-video\release_pkg\Uni-Video
+2026-01-12 21:35:18 - Executable: C:\Code\uni-video\release_pkg\Uni-Video\Uni-Video.exe
+2026-01-12 21:35:18 - Running in FROZEN mode. MEIPASS: C:\Code\uni-video\release_pkg\Uni-Video\_internal
+2026-01-12 21:35:18 - Path: ['C:\\Code\\uni-video\\release_pkg\\Uni-Video\\_internal\\base_library.zip', 'C:\\Code\\uni-video\\release_pkg\\Uni-Video\\_internal\\python3.12\\lib-dynload', 'C:\\Code\\uni-video\\release_pkg\\Uni-Video\\_internal', 'C:\\Code\\uni-video\\release_pkg\\Uni-Video\\_internal\\setuptools\\_vendor']

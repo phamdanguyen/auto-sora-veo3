@@ -1,0 +1,63 @@
+<div x-show="showAddAccountModal"
+    class="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center z-[70]" x-cloak
+    x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 scale-95"
+    x-transition:enter-end="opacity-100 scale-100" x-transition:leave="transition ease-in duration-200"
+    x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95">
+    <div class="bg-white/90 backdrop-blur-xl border border-white/20 p-8 rounded-3xl shadow-2xl w-[400px] transform transition-all relative"
+        @click.away="showAddAccountModal = false">
+
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
+                Add Account
+            </h3>
+            <button @click="showAddAccountModal = false"
+                class="p-2 rounded-full hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                    </path>
+                </svg>
+            </button>
+        </div>
+
+        <div class="space-y-4">
+            <div class="space-y-2">
+                <label class="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Account Email</label>
+                <input type="text" x-model="newAccount.email" placeholder="example@email.com"
+                    class="w-full bg-gray-50/50 border border-gray-100 p-3.5 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/50 focus:outline-none transition-all text-gray-700 placeholder:text-gray-300">
+            </div>
+            <div class="space-y-2">
+                <label class="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Password</label>
+                <input type="password" x-model="newAccount.password" placeholder="••••••••"
+                    class="w-full bg-gray-50/50 border border-gray-100 p-3.5 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/50 focus:outline-none transition-all text-gray-700 placeholder:text-gray-300">
+            </div>
+            <div class="space-y-2">
+                <label class="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Proxy
+                    (Optional)</label>
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                        <svg class="h-4 w-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9">
+                            </path>
+                        </svg>
+                    </div>
+                    <input type="text" x-model="newAccount.proxy" placeholder="ip:port:user:pass"
+                        class="w-full bg-gray-50/50 border border-gray-100 p-3.5 pl-10 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/50 focus:outline-none transition-all text-gray-700 placeholder:text-gray-300 text-sm font-mono">
+                </div>
+                <p class="text-[10px] text-amber-600 px-1 italic font-medium leading-tight mt-1">
+                    ⚠️ Cảnh báo: Sử dụng Proxy chất lượng thấp có thể khiến tài khoản bị khóa hoặc yêu cầu xác minh.
+                </p>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-end space-x-3 mt-8">
+            <button @click="showAddAccountModal = false"
+                class="btn-md font-bold text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-all">
+                Cancel
+            </button>
+            <button @click="addAccount()" class="gradient-btn btn-md shadow-lg shadow-indigo-200">
+                Add Account
+            </button>
+        </div>
+    </div>
+</div>

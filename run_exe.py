@@ -241,97 +241,83 @@ if __name__ == "__main__":
                             messagebox.showerror("Invalid Key", f"Error: {v_msg}", parent=win)
                             
                     def on_trial():
-                        # Fix: Import datetime at the top of the function scope
+                        # NEW: Use encrypted trial marker system
                         from datetime import datetime, timedelta
-                        
-                        # Check for existing trial marker
-                        marker_path = os.path.join(os.path.expanduser("~"), ".univideo_trial_marker")
-                        
-                        trial_still_active = False
-                        remaining_days = 0
-                        
-                        if os.path.exists(marker_path):
-                            try:
-                                with open(marker_path, "r") as f:
-                                    content = f.read().strip()
-                                    if "used_on=" in content:
-                                        date_str = content.split("used_on=")[1].strip()
-                                        # Handle potential format variations
-                                        try:
-                                            # Try parsing standard str(datetime) format
-                                            start_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S.%f")
-                                        except ValueError:
-                                            try:
-                                                # Failover for cases without microseconds
-                                                start_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
-                                            except:
-                                                start_date = None
-                                        
-                                        if start_date:
-                                            # Calculate expiration
-                                            expiry_date = start_date + timedelta(days=7)
-                                            now = datetime.utcnow()
-                                            
-                                            if now < expiry_date:
-                                                trial_still_active = True
-                                                remaining_days = (expiry_date - now).days + 1
-                                                
-                                                if messagebox.askyesno("Trial Active", f"Trial is still active! ({remaining_days} days remaining).\nDo you want to restore your trial license?", parent=win):
-                                                    pass 
-                                                else:
-                                                    return
-                                            else:
-                                                messagebox.showerror("Trial Expired", f"Your trial expired on {expiry_date.strftime('%Y-%m-%d')}.", parent=win)
-                                                return
-                                    else:
-                                         messagebox.showerror("Trial Expired", "Trial marker found (invalid data).", parent=win)
-                                         return
-                            except Exception as e:
-                                log_message(f"Error reading trial marker: {e}")
-                                messagebox.showerror("Trial Error", "Could not verify trial status.", parent=win)
+
+                        # Check trial status using new secure method
+                        trial_status = LicenseManager.check_trial_status()
+
+                        if trial_status["used"] and not trial_status["active"]:
+                            # Trial was used and expired
+                            messagebox.showerror(
+                                "Trial Expired",
+                                f"Your 7-day trial has expired.\n"
+                                f"Expired on: {trial_status['expiry_date']}\n\n"
+                                f"Please purchase a license key.",
+                                parent=win
+                            )
+                            return
+
+                        if trial_status["active"]:
+                            # Trial is still active
+                            remaining = trial_status["remaining_days"]
+                            if not messagebox.askyesno(
+                                "Trial Active",
+                                f"Trial is still active!\n"
+                                f"Remaining: {remaining} day(s)\n"
+                                f"Expires: {trial_status['expiry_date']}\n\n"
+                                f"Do you want to restore your trial license?",
+                                parent=win
+                            ):
                                 return
 
-                            if not trial_still_active:
-                                messagebox.showerror("Trial Expired", "You have already used your 7-day trial on this machine.", parent=win)
+                            # Calculate expiry for restore
+                            target_expiry = trial_status['expiry_date']
+                        else:
+                            # New trial
+                            if not messagebox.askyesno(
+                                "Activate Trial",
+                                "Activate 7-Day Free Trial?\n\n"
+                                "This can only be used once per machine.\n"
+                                "The trial is secured and cannot be reset.",
+                                parent=win
+                            ):
                                 return
 
-                        if not trial_still_active:
-                            # New Trial
-                            if not messagebox.askyesno("Activate Trial", "Activate 7-Day Free Trial?", parent=win):
-                                return
+                            target_expiry = (datetime.utcnow() + timedelta(days=7)).strftime("%Y-%m-%d")
 
                         try:
-                            # Generate a key for +7 days
-                            if trial_still_active:
-                                # Logic to use original expiry if needed, or just +7 days from now (simplification for user experience)
-                                # But to be correct let's use the calculated one if available
-                                if 'expiry_date' in locals():
-                                    target_expiry = expiry_date.strftime("%Y-%m-%d")
-                                else:
-                                    target_expiry = (datetime.utcnow() + timedelta(days=7)).strftime("%Y-%m-%d")
-                            else:
-                                target_expiry = (datetime.utcnow() + timedelta(days=7)).strftime("%Y-%m-%d")
-
-                            
-                            # Generate key using the Manager (client has access to it)
+                            # Generate trial key
                             trial_key = LicenseManager.generate_key(hwid_val, target_expiry)
-                            
-                            # Validate just to be sure
+
+                            # Validate
                             valid, v_msg, v_exp = LicenseManager.validate_key(trial_key)
                             if valid:
                                 LicenseManager.save_key(trial_key)
-                                
-                                # Write marker ONLY IF NEW
-                                if not trial_still_active:
-                                    with open(marker_path, "w") as f:
-                                        f.write(f"used_on={datetime.utcnow()}")
-                                    
-                                messagebox.showinfo("Success", f"Trial Activated/Restored!\nExpires: {v_exp}", parent=win)
+
+                                # Save encrypted marker for NEW trial only
+                                if not trial_status["used"]:
+                                    start_time = datetime.utcnow()
+                                    if not LicenseManager.save_trial_marker(start_time):
+                                        messagebox.showwarning(
+                                            "Warning",
+                                            "Trial activated but marker save failed.\n"
+                                            "You may be able to reuse the trial.",
+                                            parent=win
+                                        )
+
+                                messagebox.showinfo(
+                                    "Success",
+                                    f"Trial {'Restored' if trial_status['active'] else 'Activated'}!\n"
+                                    f"Expires: {v_exp}",
+                                    parent=win
+                                )
                                 result_container["key"] = trial_key
                                 win.destroy()
                             else:
                                 messagebox.showerror("Error", "Failed to generate trial key.", parent=win)
                         except Exception as e:
+                            log_message(f"Trial activation error: {e}")
                             messagebox.showerror("Error", f"Trial activation error: {e}", parent=win)
 
                     entry_key.bind('<Return>', on_submit)

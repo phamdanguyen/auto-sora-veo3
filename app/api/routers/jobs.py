@@ -142,7 +142,27 @@ async def list_jobs(
         List of jobs
     """
     jobs = await service.list_jobs(skip, limit, category)
-    return [JobResponse.from_domain(job) for job in jobs]
+    
+    # Hydrate with real-time tracker info
+    from ...core.progress_tracker import tracker
+    
+    response = []
+    for job in jobs:
+        resp = JobResponse.from_domain(job)
+        
+        # Overlay tracker info if active
+        track_info = tracker.get_job(job.id.value)
+        if track_info:
+             if track_info.get("status"):
+                 resp.status = track_info["status"]
+             if track_info.get("progress") is not None:
+                 resp.progress = int(track_info["progress"])
+             if track_info.get("message"):
+                 resp.progress_message = track_info["message"]
+        
+        response.append(resp)
+
+    return response
 
 
 @router.get("/{job_id}", response_model=JobResponse)
@@ -166,7 +186,21 @@ async def get_job(
     job = await service.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return JobResponse.from_domain(job)
+    
+    resp = JobResponse.from_domain(job)
+    
+    # Hydrate with tracker info
+    from ...core.progress_tracker import tracker
+    track_info = tracker.get_job(job.id.value)
+    if track_info:
+         if track_info.get("status"):
+             resp.status = track_info["status"]
+         if track_info.get("progress") is not None:
+             resp.progress = int(track_info["progress"])
+         if track_info.get("message"):
+             resp.progress_message = track_info["message"]
+             
+    return resp
 
 
 @router.put("/{job_id}", response_model=JobResponse)
@@ -389,42 +423,49 @@ async def upload_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"Upload failed: {str(e)}")
 
 
-# ========== Complex Endpoints (TODO) ==========
-# These endpoints require integration with worker/task manager
+# ========== Complex Endpoints (Refactored) ==========
 
 @router.post("/{job_id}/tasks/{task_name}/run")
-async def run_job_task(job_id: int, task_name: str, db: Session = Depends(get_db)):
+async def run_job_task(
+    job_id: int, 
+    task_name: str, 
+    task_service: TaskService = Depends(get_task_service)
+):
     """
-    Run specific task for a job
-
-    TODO: Implement using TaskService
+    Run specific task for a job (Debug/Manual Retry)
     """
-    # Import the old implementation via deprecated path
-    from ...legacy.endpoints import run_job_task as old_run_job_task
-    return await old_run_job_task(job_id, task_name, db)
+    try:
+        await task_service.retry_job_task(job_id, task_name)
+        return {"ok": True}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/{job_id}/open_folder")
-def open_job_folder(job_id: int, db: Session = Depends(get_db)):
+async def open_job_folder(
+    job_id: int, 
+    service: JobService = Depends(get_job_service)
+):
     """
     Open job folder in file explorer
-
-    Opens the folder containing the downloaded video.
-
-    TODO: Migrate to use JobService
     """
-    # Import the old implementation for now
-    from ...legacy.endpoints import open_job_folder as old_open_job_folder
-    return old_open_job_folder(job_id, db)
+    try:
+        await service.open_job_folder(job_id)
+        return {"ok": True}
+    except ValueError as e:
+         raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.post("/{job_id}/open_video")
-def open_job_video(job_id: int, db: Session = Depends(get_db)):
+async def open_job_video(
+    job_id: int, 
+    service: JobService = Depends(get_job_service)
+):
     """
     Open video in default media player
-
-    TODO: Migrate to use JobService
     """
-    # Import the old implementation for now
-    from ...legacy.endpoints import open_job_video as old_open_job_video
-    return old_open_job_video(job_id, db)
+    try:
+        await service.open_job_video(job_id)
+        return {"ok": True}
+    except ValueError as e:
+         raise HTTPException(status_code=404, detail=str(e))

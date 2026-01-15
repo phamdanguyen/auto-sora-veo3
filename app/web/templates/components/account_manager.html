@@ -1,0 +1,132 @@
+<div x-show="currentTab === 'accounts'" x-transition.opacity>
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-2xl font-bold text-gray-800 tracking-tight">Accounts Manager</h2>
+        <div class="flex items-center gap-3">
+            <button @click="checkAllCredits" :disabled="checkingCredits"
+                class="btn-sm bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 font-bold transition-all shadow-sm flex items-center">
+                <span x-show="checkingCredits" class="animate-spin mr-2">⟳</span>
+                <span x-text="checkingCredits ? 'Checking...' : 'Check Credits'"></span>
+            </button>
+            <button @click="refreshAllAccounts" :disabled="refreshingAccounts"
+                class="btn-sm bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 font-bold transition-all shadow-sm flex items-center">
+                <span x-show="refreshingAccounts" class="animate-spin mr-2">⟳</span>
+                <span x-text="refreshingAccounts ? 'Refreshing...' : 'Refresh All (Login)'"></span>
+            </button>
+            <button @click="globalManualLogin"
+                class="btn-sm bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md transition-all flex items-center">
+                <span>🔑 Manual Login</span>
+            </button>
+            <button @click="showAddAccountModal = true" class="gradient-btn btn-sm shadow-lg transition-all">
+                Add Account
+            </button>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-8">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50/50 border-b border-gray-100">
+                <tr class="text-left text-xs font-bold text-gray-400 uppercase tracking-widest">
+                    <th class="p-4">Platform</th>
+                    <th class="p-4">Account Details</th>
+                    <th class="p-4">Credits</th>
+                    <th class="p-4 text-center">Login Mode</th>
+                    <th class="p-4">Token Status</th>
+                    <th class="p-4 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200">
+                <template x-for="acc in accounts" :key="acc.id">
+                    <tr class="hover:bg-gray-50/80 transition-colors group">
+                        <td class="p-4">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold text-xs"
+                                    x-text="acc.platform.substring(0,2).toUpperCase()"></div>
+                                <span class="font-bold text-gray-900" x-text="acc.platform"></span>
+                            </div>
+                        </td>
+                        <td class="p-4">
+                            <div class="flex flex-col">
+                                <span class="text-sm font-semibold text-gray-800" x-text="acc.email"></span>
+                                <div class="flex items-center mt-1 space-x-2">
+                                    <span class="text-[10px] text-gray-400 font-mono"
+                                        x-text="acc.proxy ? 'Proxy: ' + acc.proxy.split('@').pop() : 'Direct Connection'"></span>
+                                    <span x-show="acc.token_expires_at"
+                                        class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500"
+                                        :class="{'bg-red-50 text-red-500 font-bold': isExpired(acc.token_expires_at)}">
+                                        Exp: <span x-text="timeUntil(acc.token_expires_at)"></span>
+                                    </span>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="p-4">
+                            <div class="flex items-center space-x-2">
+                                <div :class="acc.credits_remaining > 0 ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-500'"
+                                    class="px-2.5 py-1 rounded-full text-xs font-bold min-w-[40px] text-center"
+                                    x-text="(acc.credits_remaining === null || acc.credits_remaining === undefined || acc.credits_remaining === -1) ? '-' : acc.credits_remaining">
+                                </div>
+                                <span x-show="acc.credits_reset_at" class="text-[10px] text-gray-400"
+                                    x-text="'Reset: ' + formatDate(acc.credits_reset_at)"></span>
+                            </div>
+                        </td>
+                        <td class="p-4 text-center">
+                            <button @click="toggleLoginMode(acc)"
+                                class="inline-flex items-center px-3 py-1 rounded-lg text-xs font-bold uppercase transition-all"
+                                :class="acc.login_mode === 'manual' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'">
+                                <span class="w-2 h-2 rounded-full mr-2"
+                                    :class="acc.login_mode === 'manual' ? 'bg-amber-500' : 'bg-emerald-500'"></span>
+                                <span x-text="acc.login_mode || 'auto'"></span>
+                            </button>
+                        </td>
+                        <td class="p-4">
+                            <div class="flex flex-col">
+                                <span :class="{
+                                    'bg-green-100 text-green-800': acc.token_status === 'valid',
+                                    'bg-red-100 text-red-800': acc.token_status === 'expired',
+                                    'bg-yellow-100 text-yellow-800': !acc.token_status || acc.token_status === 'pending',
+                                    'bg-blue-100 text-blue-800': acc.token_status === 'logging_in'
+                                }"
+                                    class="px-3 py-1 rounded-full text-[11px] font-bold inline-flex items-center w-fit shadow-sm">
+                                    <span class="w-1.5 h-1.5 rounded-full mr-2" :class="{
+                                        'bg-green-500': acc.token_status === 'valid',
+                                        'bg-red-500': acc.token_status === 'expired',
+                                        'bg-yellow-500': !acc.token_status || acc.token_status === 'pending',
+                                        'bg-blue-500': acc.token_status === 'logging_in'
+                                    }"></span>
+                                    <span
+                                        x-text="acc.token_status === 'valid' ? 'ACTIVE' : (acc.token_status === 'expired' ? 'EXPIRED' : (acc.token_status === 'logging_in' ? 'LOGGING IN' : 'PENDING'))"></span>
+                                </span>
+                                <span x-show="acc.credits_last_checked"
+                                    class="text-[9px] text-gray-400 mt-1 uppercase tracking-tighter"
+                                    x-text="'Last Check: ' + formatDate(acc.credits_last_checked)"></span>
+                            </div>
+                        </td>
+                        <td class="p-4 text-right">
+                            <div class="flex items-center justify-end space-x-2">
+                                <button @click="loginAccount(acc.id)"
+                                    class="btn-sm font-bold text-white transition-all shadow-sm" :class="{
+                                        'bg-emerald-500 hover:bg-emerald-600': acc.token_status === 'valid',
+                                        'bg-amber-500 hover:bg-amber-600': acc.token_status === 'pending' || !acc.token_status,
+                                        'bg-red-500 hover:bg-red-600 animate-pulse': acc.token_status === 'expired'
+                                    }">
+                                    <span x-text="acc.token_status === 'valid' ? 'Refresh' : 'Login'"></span>
+                                </button>
+                                <button @click="deleteAccount(acc.id)"
+                                    class="btn-sm text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                                        </path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                </template>
+                <tr x-show="accounts.length === 0">
+                    <td colspan="7" class="p-8 text-center text-gray-500">No accounts found. Add one to get
+                        started.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>

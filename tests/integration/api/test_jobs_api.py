@@ -7,7 +7,6 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import Mock, AsyncMock
 
-from app.main import app
 from app.api.dependencies import get_job_service, get_task_service
 from app.core.services.job_service import JobService
 from app.core.services.task_service import TaskService
@@ -47,10 +46,13 @@ def mock_task_service():
 @pytest.fixture
 def client(mock_job_service, mock_task_service):
     """FastAPI TestClient with mocked services"""
+    # Import test app
+    from tests.test_app import app
+
     app.dependency_overrides[get_job_service] = lambda: mock_job_service
     app.dependency_overrides[get_task_service] = lambda: mock_task_service
-    test_client = TestClient(app)
-    yield test_client
+    with TestClient(app) as test_client:
+        yield test_client
     app.dependency_overrides.clear()
 
 

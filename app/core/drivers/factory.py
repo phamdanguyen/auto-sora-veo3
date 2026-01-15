@@ -93,6 +93,14 @@ class DriverFactory:
                 user_data_dir="/path/to/profile"
             )
         """
+        # Special handling for Sora API mode
+        if platform == "sora" and kwargs.get("api_mode"):
+            from app.core.drivers.sora.api_driver import SoraApiDriver
+            logger.debug("Creating driver: sora (SoraApiDriver)")
+            kwargs.pop("api_mode", None) # Clean kwargs
+            kwargs.pop("headless", None) # Clean kwargs
+            return SoraApiDriver(**kwargs)
+
         driver_class = self._drivers.get(platform)
         if not driver_class:
             available = list(self._drivers.keys())
@@ -102,6 +110,9 @@ class DriverFactory:
             )
 
         logger.debug(f"Creating driver: {platform} ({driver_class.__name__})")
+        
+        # Clean up api_mode if it was passed but not handled above (e.g. for other drivers)
+        kwargs.pop("api_mode", None) 
         return driver_class(**kwargs)
 
     def is_registered(self, platform: str) -> bool:
@@ -142,11 +153,11 @@ def register_default_drivers():
     - VEO3 (Google) - Coming soon
     """
     try:
-        from .sora.driver import SoraDriver
-        driver_factory.register("sora", SoraDriver)
+        from app.core.drivers.sora.browser_driver import SoraBrowserDriver
+        driver_factory.register("sora", SoraBrowserDriver)
         logger.info("Registered default drivers: sora")
     except ImportError as e:
-        logger.warning(f"Failed to register SoraDriver: {e}")
+        logger.warning(f"Failed to register SoraBrowserDriver: {e}")
 
     # Register VEO3 when available
     # try:

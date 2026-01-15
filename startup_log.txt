@@ -1,0 +1,10 @@
+2026-01-13 11:01:31 - === NEW STARTUP SESSION ===
+2026-01-13 11:01:31 - CWD: C:\Code\uni-video
+2026-01-13 11:01:31 - Executable: C:\Users\Master\AppData\Local\Programs\Python\Python312\python.exe
+2026-01-13 11:01:31 - Running in SCRIPT mode.
+2026-01-13 11:01:31 - Path: ['C:\\Code\\uni-video', 'C:\\Users\\Master\\AppData\\Local\\Programs\\Python\\Python312\\python312.zip', 'C:\\Users\\Master\\AppData\\Local\\Programs\\Python\\Python312\\DLLs', 'C:\\Users\\Master\\AppData\\Local\\Programs\\Python\\Python312\\Lib', 'C:\\Users\\Master\\AppData\\Local\\Programs\\Python\\Python312', 'C:\\Users\\Master\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages']
+2026-01-13 11:06:05 - === NEW STARTUP SESSION ===
+2026-01-13 11:06:05 - CWD: C:\Code\uni-video
+2026-01-13 11:06:05 - Executable: C:\Users\Master\AppData\Local\Programs\Python\Python312\python.exe
+2026-01-13 11:06:05 - Running in SCRIPT mode.
+2026-01-13 11:06:05 - Path: ['C:\\Code\\uni-video', 'C:\\Users\\Master\\AppData\\Local\\Programs\\Python\\Python312\\python312.zip', 'C:\\Users\\Master\\AppData\\Local\\Programs\\Python\\Python312\\DLLs', 'C:\\Users\\Master\\AppData\\Local\\Programs\\Python\\Python312\\Lib', 'C:\\Users\\Master\\AppData\\Local\\Programs\\Python\\Python312', 'C:\\Users\\Master\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages']

@@ -51,10 +51,11 @@ class TaskService:
             raise ValueError("No available accounts with credits")
 
         # Start job via task manager
+        # Note: task_manager.start_job() already sets status to "processing"
+        # and initializes task_state. We just need to persist changes to DB.
         await task_manager.start_job(job)
 
-        # Update job status
-        job.progress.status = JobStatus.PENDING
+        # Persist changes to DB (DON'T override status!)
         updated = await self.job_repo.update(job)
         self.job_repo.commit()
 

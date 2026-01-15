@@ -187,3 +187,54 @@ class JobService:
         updated = await self.job_repo.update(job)
         self.job_repo.commit()
         return updated
+
+    async def open_job_folder(self, job_id: int) -> bool:
+        """
+        Open folder containing job video
+        """
+        import os
+        import subprocess
+        
+        job = await self.job_repo.get_by_id(job_id)
+        if not job or not job.result.local_path:
+            raise ValueError(f"Job {job_id} has no file")
+
+        file_path = job.result.local_path
+        folder_path = os.path.dirname(os.path.abspath(file_path))
+        
+        if not os.path.exists(folder_path):
+             raise ValueError("Folder not found")
+
+        if os.name == 'nt':
+            subprocess.run(['explorer', '/select,', os.path.abspath(file_path)])
+        elif os.name == 'posix':
+            subprocess.run(['xdg-open', folder_path])
+            
+        return True
+
+    async def open_job_video(self, job_id: int) -> bool:
+        """
+        Open video file in default player
+        """
+        import os
+        import subprocess
+        
+        job = await self.job_repo.get_by_id(job_id)
+        if not job or not job.result.local_path:
+            raise ValueError(f"Job {job_id} has no file")
+
+        file_path = os.path.abspath(job.result.local_path)
+        
+        if not os.path.exists(file_path):
+             raise ValueError("File not found")
+
+        try:
+            os.startfile(file_path) # Windows only
+        except AttributeError:
+            # Mac/Linux
+            if os.name == 'posix':
+                 subprocess.run(['xdg-open', file_path])
+            else:
+                 subprocess.run(['open', file_path])
+                 
+        return True

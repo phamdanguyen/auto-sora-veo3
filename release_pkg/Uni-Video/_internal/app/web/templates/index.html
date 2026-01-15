@@ -1,0 +1,1587 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uni-Video Automation Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        [x-cloak] {
+            display: none !important;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-100 font-sans" x-data="appData()">
+
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <div :class="sidebarCollapsed ? 'w-20' : 'w-64'"
+            class="bg-gray-900 text-white flex flex-col shadow-lg z-10 transition-all duration-300 ease-in-out">
+            <div class="p-5 border-b border-gray-800 flex items-center justify-between h-20">
+                <div class="flex items-center space-x-2 overflow-hidden"
+                    :class="sidebarCollapsed ? 'px-0 justify-center w-full' : ''">
+                    <span class="text-2xl font-bold whitespace-nowrap" x-show="!sidebarCollapsed">Uni-Video</span>
+                    <span class="text-xl font-bold" x-show="sidebarCollapsed">UV</span>
+                </div>
+                <button @click="sidebarCollapsed = !sidebarCollapsed" x-show="!sidebarCollapsed"
+                    class="text-gray-400 hover:text-white focus:outline-none">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <div x-show="sidebarCollapsed" class="flex justify-center py-2 border-b border-gray-800">
+                <button @click="sidebarCollapsed = !sidebarCollapsed" class="text-gray-400 hover:text-white">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M13 5l7 7-7 7M5 5l7 7-7 7"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <nav class="flex-1 p-2 space-y-2 overflow-y-auto">
+                <a href="#" @click="currentTab = 'dashboard'"
+                    :class="{'bg-blue-600': currentTab === 'dashboard', 'hover:bg-gray-700': currentTab !== 'dashboard', 'justify-center': sidebarCollapsed}"
+                    class="flex items-center p-3 rounded transition-colors duration-200 group relative">
+                    <svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z">
+                        </path>
+                    </svg>
+                    <span :class="sidebarCollapsed ? 'hidden' : 'ml-3 whitespace-nowrap'">Dashboard</span>
+                    <!-- Tooltip -->
+                    <div x-show="sidebarCollapsed"
+                        class="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap pointer-events-none">
+                        Dashboard</div>
+                </a>
+
+                <a href="#" @click="currentTab = 'accounts'"
+                    :class="{'bg-blue-600': currentTab === 'accounts', 'hover:bg-gray-700': currentTab !== 'accounts', 'justify-center': sidebarCollapsed}"
+                    class="flex items-center p-3 rounded transition-colors duration-200 group relative">
+                    <svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z">
+                        </path>
+                    </svg>
+                    <span :class="sidebarCollapsed ? 'hidden' : 'ml-3 whitespace-nowrap'">Accounts</span>
+                    <div x-show="sidebarCollapsed"
+                        class="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap pointer-events-none">
+                        Accounts</div>
+                </a>
+
+                <a href="#" @click="currentTab = 'jobs'; fetchJobs()"
+                    :class="{'bg-blue-600': currentTab === 'jobs', 'hover:bg-gray-700': currentTab !== 'jobs', 'justify-center': sidebarCollapsed}"
+                    class="flex items-center p-3 rounded transition-colors duration-200 group relative">
+                    <svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M19 11H5m14-4H5m14 8H5m14 4H5"></path>
+                    </svg>
+                    <span :class="sidebarCollapsed ? 'hidden' : 'ml-3 whitespace-nowrap'">Jobs Queue</span>
+                    <div x-show="sidebarCollapsed"
+                        class="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap pointer-events-none">
+                        Jobs Queue</div>
+                </a>
+
+                <a href="#" @click="currentTab = 'history'; fetchJobs()"
+                    :class="{'bg-blue-600': currentTab === 'history', 'hover:bg-gray-700': currentTab !== 'history', 'justify-center': sidebarCollapsed}"
+                    class="flex items-center p-3 rounded transition-colors duration-200 group relative">
+                    <svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01">
+                        </path>
+                    </svg>
+                    <span :class="sidebarCollapsed ? 'hidden' : 'ml-3 whitespace-nowrap'">Job Complete</span>
+                    <div x-show="sidebarCollapsed"
+                        class="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap pointer-events-none">
+                        Job Complete</div>
+                </a>
+
+                <a href="#" @click="currentTab = 'about'; fetchLicenseInfo()"
+                    :class="{'bg-blue-600': currentTab === 'about', 'hover:bg-gray-700': currentTab !== 'about', 'justify-center': sidebarCollapsed}"
+                    class="flex items-center p-3 rounded transition-colors duration-200 group relative">
+                    <svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <span :class="sidebarCollapsed ? 'hidden' : 'ml-3 whitespace-nowrap'">About</span>
+                    <div x-show="sidebarCollapsed"
+                        class="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap pointer-events-none">
+                        About</div>
+                </a>
+            </nav>
+            <div class="p-4 text-sm text-gray-500 border-t border-gray-700 bg-gray-900">
+                <div :class="sidebarCollapsed ? 'text-center text-xs' : ''"
+                    x-text="sidebarCollapsed ? 'v1.1' : 'v1.1.0'"></div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="flex-1 overflow-auto p-8">
+
+            <!-- Dashboard Tab -->
+            <div x-show="currentTab === 'dashboard'" x-transition.opacity>
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-3xl font-bold text-gray-800">Dashboard</h2>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div @click="currentTab = 'accounts'"
+                        class="bg-white p-6 rounded-lg shadow-md border-l-4 border-blue-500 cursor-pointer hover:shadow-lg transition-shadow">
+                        <div class="text-gray-500 font-medium">Active Accounts</div>
+                        <div class="text-4xl font-bold text-gray-800 mt-2" x-text="stats.activeAccounts">0</div>
+                    </div>
+                    <div @click="currentTab = 'jobs'; fetchJobs()"
+                        class="bg-white p-6 rounded-lg shadow-md border-l-4 border-yellow-500 cursor-pointer hover:shadow-lg transition-shadow">
+                        <div class="text-gray-500 font-medium">Pending Jobs</div>
+                        <div class="text-4xl font-bold text-gray-800 mt-2" x-text="stats.pendingJobs">0</div>
+                    </div>
+                    <div @click="currentTab = 'history'; fetchJobs()"
+                        class="bg-white p-6 rounded-lg shadow-md border-l-4 border-green-500 cursor-pointer hover:shadow-lg transition-shadow">
+                        <div class="text-gray-500 font-medium">Videos Created</div>
+                        <div class="text-4xl font-bold text-gray-800 mt-2" x-text="stats.completedJobs">0</div>
+                    </div>
+                    <div @click="currentTab = 'jobs'; fetchJobs()"
+                        class="bg-white p-6 rounded-lg shadow-md border-l-4 border-indigo-500 cursor-pointer hover:shadow-lg transition-shadow">
+                        <div class="text-gray-500 font-medium">Processing</div>
+                        <!-- active jobs = processing + sent_prompt + generating + download -->
+                        <div class="text-4xl font-bold text-gray-800 mt-2"
+                            x-text="jobs.filter(j => ['processing', 'sent_prompt', 'generating', 'download'].includes(j.status)).length">
+                            0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Accounts Tab -->
+            <div x-show="currentTab === 'accounts'" x-transition.opacity>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-gray-800">Accounts Manager</h2>
+                    <div class="flex space-x-2">
+                        <button @click="checkAllCredits" :disabled="checkingCredits"
+                            class="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white px-4 py-2 text-sm rounded transition-colors flex items-center">
+                            <span x-show="checkingCredits" class="animate-spin mr-2">⟳</span>
+                            <span x-text="checkingCredits ? 'Checking...' : 'Check Credits'"></span>
+                        </button>
+                        <button @click="refreshAllAccounts" :disabled="refreshingAccounts"
+                            class="bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white px-4 py-2 text-sm rounded transition-colors flex items-center">
+                            <span x-show="refreshingAccounts" class="animate-spin mr-2">⟳</span>
+                            <span x-text="refreshingAccounts ? 'Refreshing...' : 'Refresh All (Login)'"></span>
+                        </button>
+                        <button @click="globalManualLogin"
+                            class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded shadow transition-colors flex items-center">
+                            <span>🔑 Manual Login</span>
+                        </button>
+                        <button @click="showAddAccountModal = true"
+                            class="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded shadow transition-colors">Add
+                            Account</button>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow overflow-hidden">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-50 border-b">
+                            <tr class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="p-3">Platform</th>
+                                <th class="p-3">Email</th>
+                                <th class="p-3">Credits</th>
+                                <th class="p-3">Mode</th>
+                                <th class="p-3">Status</th>
+                                <th class="p-3">Token</th>
+                                <th class="p-3">Expires In</th>
+                                <th class="p-3">Proxy</th>
+                                <th class="p-3 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            <template x-for="acc in accounts" :key="acc.id">
+                                <tr class="hover:bg-gray-50 transition-colors">
+                                    <td class="p-3 font-medium text-gray-900" x-text="acc.platform"></td>
+                                    <td class="p-3 text-gray-700" x-text="acc.email"></td>
+                                    <td class="p-3">
+                                        <span :class="{
+                                            'text-green-600 font-bold': acc.credits_remaining > 0,
+                                            'text-red-600 font-bold': acc.credits_remaining === 0,
+                                            'text-gray-400': acc.credits_remaining === null || acc.credits_remaining === undefined || acc.credits_remaining === -1
+                                        }"
+                                            x-text="(acc.credits_remaining === null || acc.credits_remaining === undefined || acc.credits_remaining === -1) ? '-' : acc.credits_remaining"></span>
+                                    </td>
+                                    <td class="p-3">
+                                        <span @click="toggleLoginMode(acc)"
+                                            class="cursor-pointer px-2 py-1 rounded text-xs font-bold uppercase border"
+                                            :class="acc.login_mode === 'manual' ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-green-100 text-green-700 border-green-200'"
+                                            title="Click to toggle (Auto/Manual)" x-text="acc.login_mode || 'auto'">
+                                        </span>
+                                    </td>
+                                    <td class="p-3 text-gray-500 text-xs" x-text="formatDate(acc.credits_reset_at)">
+                                    </td>
+                                    <!-- Token Status Column -->
+                                    <td class="p-3">
+                                        <div class="flex flex-col">
+                                            <span :class="{
+                                                'bg-green-100 text-green-800': acc.token_status === 'valid',
+                                                'bg-red-100 text-red-800': acc.token_status === 'expired',
+                                                'bg-yellow-100 text-yellow-800': !acc.token_status || acc.token_status === 'pending',
+                                                'bg-blue-100 text-blue-800': acc.token_status === 'logging_in'
+                                            }"
+                                                class="px-2 py-0.5 rounded-full text-xs font-medium inline-flex items-center w-fit">
+                                                <span x-show="acc.token_status === 'valid'">✓ Valid</span>
+                                                <span x-show="acc.token_status === 'expired'">⚠ Expired</span>
+                                                <span x-show="!acc.token_status || acc.token_status === 'pending'">⏳
+                                                    Pending</span>
+                                                <span x-show="acc.token_status === 'logging_in'">🔄 Logging in...</span>
+                                            </span>
+                                            <!-- Show last checked time -->
+                                            <span x-show="acc.credits_last_checked"
+                                                class="text-[10px] text-gray-400 mt-0.5"
+                                                x-text="'Checked: ' + formatDate(acc.credits_last_checked)"></span>
+                                        </div>
+                                    </td>
+                                    <td class="p-3 text-gray-500 text-xs"
+                                        :class="{'text-red-500 font-bold': isExpired(acc.token_expires_at)}"
+                                        x-text="timeUntil(acc.token_expires_at)"></td>
+                                    <td class="p-3 text-xs text-gray-500 font-mono"
+                                        x-text="acc.proxy ? acc.proxy.split('@').pop() : 'Direct'"></td>
+                                    <td class="p-3 text-right space-x-2">
+                                        <button @click="loginAccount(acc.id)" :class="{
+                                                'bg-green-500 hover:bg-green-600': acc.token_status === 'valid',
+                                                'bg-yellow-500 hover:bg-yellow-600': acc.token_status === 'pending' || !acc.token_status,
+                                                'bg-red-500 hover:bg-red-600 animate-pulse': acc.token_status === 'expired'
+                                            }" class="text-white px-3 py-1 rounded text-xs font-medium"
+                                            :title="acc.token_status === 'valid' ? 'Token OK - Click to re-login' : (acc.token_status === 'expired' ? '⚠️ Token hết hạn - Click để login lại!' : 'Click to login and capture token')">
+                                            <span
+                                                x-text="acc.token_status === 'valid' ? '✓ Token' : (acc.token_status === 'expired' ? '⚠ Re-Login' : 'Login')"></span>
+                                        </button>
+                                        <button @click="deleteAccount(acc.id)"
+                                            class="text-red-600 hover:text-red-900 text-xs font-medium">Delete</button>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr x-show="accounts.length === 0">
+                                <td colspan="7" class="p-8 text-center text-gray-500">No accounts found. Add one to get
+                                    started.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Jobs/History Tab -->
+            <div x-show="currentTab === 'jobs' || currentTab === 'history'" x-transition.opacity>
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                    <div class="flex items-center space-x-4">
+                        <h2 class="text-3xl font-bold text-gray-800"
+                            x-text="currentTab === 'history' ? 'Job Complete' : 'Jobs Queue'"></h2>
+
+                        <!-- System Control Panel -->
+                        <div class="flex items-center bg-white rounded-lg shadow-sm border border-gray-200 p-1.5 space-x-3"
+                            x-data="{ showDetails: false }" @mouseenter="showDetails = true"
+                            @mouseleave="showDetails = false">
+
+                            <!-- Status Badge -->
+                            <div class="flex items-center px-2 py-1 rounded text-xs font-bold uppercase cursor-help transition-all duration-300"
+                                :class="systemStatus.paused ? 'bg-yellow-100 ring-1 ring-yellow-400 text-yellow-800' : 'bg-green-100 ring-1 ring-green-400 text-green-800'">
+                                <div class="w-2 h-2 rounded-full mr-1.5 animate-pulse"
+                                    :class="systemStatus.paused ? 'bg-yellow-500' : 'bg-green-500'"></div>
+                                <span
+                                    x-text="systemStatus.paused ? (systemStatus.pause_reason ? 'PAUSED' : 'PAUSED') : 'RUNNING'"></span>
+                            </div>
+                            <!-- Pause Reason (Visible if paused with reason) -->
+                            <div x-show="systemStatus.paused && systemStatus.pause_reason"
+                                class="text-[10px] text-red-600 px-2 py-1 bg-red-50 border border-red-200 rounded font-bold animate-pulse">
+                                <span x-text="systemStatus.pause_reason"></span>
+                            </div>
+
+                            <!-- Quick Stats (Generation) -->
+                            <div class="flex space-x-3 text-xs border-l pl-3 border-gray-300">
+                                <div title="Jobs Waiting" class="flex flex-col leading-none items-center w-8">
+                                    <span class="font-bold text-gray-700 text-base"
+                                        x-text="systemStatus.queue_info?.generate || 0">0</span>
+                                    <span class="text-[9px] text-gray-400 uppercase tracking-tighter">Wait</span>
+                                </div>
+                                <div title="Jobs Processing" class="flex flex-col leading-none items-center w-8">
+                                    <span class="font-bold text-blue-600 text-base"
+                                        x-text="systemStatus.active_jobs?.length || 0">0</span>
+                                    <span class="text-[9px] text-blue-400 uppercase tracking-tighter">Run</span>
+                                </div>
+                            </div>
+
+                            <!-- Control Buttons -->
+                            <div class="flex items-center space-x-1 border-l pl-3 border-gray-300">
+                                <template x-if="systemStatus.paused">
+                                    <button @click="toggleSystemPause(false)"
+                                        class="flex items-center space-x-1 bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded shadow text-xs font-bold transition-transform active:scale-95"
+                                        title="Resume System">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z">
+                                            </path>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                        <span>RESUME</span>
+                                    </button>
+                                </template>
+
+                                <template x-if="!systemStatus.paused">
+                                    <button @click="toggleSystemPause(true)"
+                                        class="flex items-center space-x-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 px-3 py-1 rounded shadow text-xs font-bold transition-transform active:scale-95"
+                                        title="Pause System">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                        <span>PAUSE</span>
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- Start Workers Button (Legacy but kept for manual start) -->
+                        <button @click="startWorkers"
+                            x-show="!systemStatus.active_jobs && systemStatus.queue_info?.generate > 0 && !systemStatus.paused"
+                            class="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center shadow-sm ml-2">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M13 10V3L4 14h7v7l9-11h-7z">
+                                </path>
+                            </svg>
+                            Start System
+                        </button>
+                    </div>
+                    <div class="flex space-x-3 items-center" x-show="currentTab !== 'history'">
+
+
+                        <!-- Selected Actions (Visible when items selected) -->
+                        <div x-show="selectedIds.length > 0"
+                            class="flex space-x-2 mr-2 bg-blue-50 p-1 rounded-lg border border-blue-200 animate-pulse">
+                            <span class="text-xs font-bold text-blue-800 flex items-center px-2"
+                                x-text="selectedIds.length + ' selected'"></span>
+
+                            <button @click="batchAction('start_selected')"
+                                class="bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded text-xs shadow flex items-center"
+                                title="Start selected jobs">
+                                Start
+                            </button>
+                            <button @click="batchAction('retry_selected')"
+                                class="bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs shadow flex items-center"
+                                title="Retry selected jobs">
+                                Retry
+                            </button>
+                            <button @click="batchAction('delete_selected')"
+                                class="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs shadow flex items-center"
+                                title="Delete selected jobs">
+                                Delete
+                            </button>
+                        </div>
+
+                        <!-- Global Actions (Always Visible) -->
+                        <div class="flex space-x-2 mr-2">
+
+                            <button @click="bulkAction('delete_all')"
+                                class="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-sm shadow flex items-center"
+                                title="Delete all jobs">
+                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                                    </path>
+                                </svg>
+                                Delete All
+                            </button>
+                            <button @click="systemReset()"
+                                class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1.5 rounded text-sm shadow flex items-center"
+                                title="Force reset busy accounts and stuck jobs">
+                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                                    </path>
+                                </svg>
+                                Reset System
+                            </button>
+                        </div>
+
+                        <!-- Bulk Actions Dropdown REMOVED -->
+
+                        <button @click="showAddJobModal = true"
+                            class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded shadow transition-colors flex items-center">
+                            <span class="text-xl font-bold mr-1">+</span> New Job
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow overflow-hidden">
+                    <table class="w-full">
+                        <thead class="bg-gray-50 border-b">
+                            <tr class="text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="p-4 w-10">
+                                    <input type="checkbox" @change="toggleAll($event)"
+                                        class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                </th>
+                                <th class="p-4 w-16">ID</th>
+                                <th class="p-4 w-32">Task ID</th>
+                                <th class="p-4">Account</th>
+                                <th class="p-4 w-1/2">Prompt</th>
+                                <th class="p-4">Image</th>
+                                <th class="p-4">Status</th>
+                                <th class="p-4 text-right">Path</th>
+                                <th class="p-4 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <template x-for="job in jobs" :key="job.id">
+                            <tbody class="divide-y divide-gray-200">
+                                <!-- Main Job Row -->
+                                <tr class="hover:bg-gray-50 transition-colors group cursor-pointer"
+                                    :class="{'bg-blue-50': job.task_state}" @click="viewJobDetail(job)">
+                                    <td class="p-4" @click.stop>
+                                        <input type="checkbox" :value="job.id" x-model="selectedIds"
+                                            class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                    </td>
+                                    <td class="p-4 text-gray-500">
+                                        <div class="font-bold text-gray-900" x-text="'#' + job.id"></div>
+                                    </td>
+                                    <td class="p-4">
+                                        <template x-if="job.video_id">
+                                            <div class="text-xs font-mono text-gray-600 cursor-pointer hover:text-blue-600 truncate max-w-[120px]"
+                                                @click.stop="navigator.clipboard.writeText(job.video_id); showToast('Copied Task ID!', 'success')"
+                                                title="Click to copy">
+                                                <span x-text="job.video_id"></span>
+                                            </div>
+                                        </template>
+                                        <template x-if="!job.video_id">
+                                            <span class="text-xs text-gray-400">-</span>
+                                        </template>
+                                    </td>
+                                    <td class="p-4">
+                                        <div class="flex items-center space-x-2">
+                                            <div x-show="job.account_id"
+                                                class="bg-gray-100 text-gray-600 text-[10px] font-mono px-1.5 py-0.5 rounded border border-gray-200"
+                                                title="Queue ID / Account ID">
+                                                Q-<span x-text="job.account_id"></span>
+                                            </div>
+                                            <div>
+                                                <div class="text-sm font-medium text-gray-900 truncate max-w-[150px]"
+                                                    x-text="job.account ? job.account.email : 'Waiting Alloc...'"></div>
+                                                <div class="text-xs text-gray-500"
+                                                    x-text="job.account ? job.account.platform : '-'"></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="p-4">
+                                        <div class="text-sm text-gray-900" x-text="job.prompt"></div>
+                                        <div class="text-xs text-gray-500 mt-1"
+                                            x-text="job.duration + 's | ' + job.aspect_ratio"></div>
+                                    </td>
+                                    <td class="p-4">
+                                        <template x-if="job.image_path">
+                                            <a :href="'file:///' + job.image_path.replace(/\\/g, '/')" target="_blank"
+                                                class="text-blue-600 hover:text-blue-800 text-sm underline truncate block max-w-[100px]"
+                                                x-text="job.image_path.split(/[\\/]/).pop()">
+                                            </a>
+                                        </template>
+                                        <template x-if="!job.image_path">
+                                            <span class="text-xs text-gray-300">-</span>
+                                        </template>
+                                    </td>
+                                    <td class="p-4">
+                                        <span :class="{
+                                            'bg-gray-100 text-gray-800': job.status === 'draft',
+                                            'bg-yellow-100 text-yellow-800': job.status === 'pending',
+                                            'bg-blue-100 text-blue-800': job.status === 'processing',
+                                            'bg-indigo-100 text-indigo-800': job.status === 'sent_prompt',
+                                            'bg-purple-100 text-purple-800': job.status === 'generating',
+                                            'bg-orange-100 text-orange-800': job.status === 'download',
+                                            'bg-green-100 text-green-800': job.status === 'completed' || job.status === 'done',
+                                            'bg-red-100 text-red-800': job.status === 'failed',
+                                            'bg-gray-400 text-white': job.status === 'cancelled'
+                                        }" class="px-2.5 py-0.5 rounded-full text-xs font-medium capitalize animate-pulse-slow"
+                                            :class="{'animate-pulse': ['processing', 'generating', 'download'].includes(job.status)}"
+                                            x-text="job.status === 'done' ? 'Done' : job.status"></span>
+
+                                        <!-- Real-time Progress Message -->
+                                        <div x-show="job.progress_message && !['done', 'failed', 'cancelled', 'draft'].includes(job.status)"
+                                            class="text-[10px] text-blue-600 mt-1 font-mono leading-tight"
+                                            x-text="job.progress_message"></div>
+
+                                        <!-- Progress Bar -->
+                                        <div x-show="job.progress > 0 && !['done', 'failed', 'cancelled', 'draft'].includes(job.status)"
+                                            class="w-full bg-gray-200 rounded-full h-1.5 mt-1 overflow-hidden">
+                                            <div class="bg-blue-500 h-1.5 rounded-full transition-all duration-500"
+                                                :style="'width: ' + job.progress + '%'"></div>
+                                        </div>
+
+                                        <div x-show="job.status === 'failed'"
+                                            class="text-xs text-red-500 mt-1 truncate max-w-[150px]"
+                                            x-text="job.error_message" title="job.error_message"></div>
+                                    </td>
+                                    <td class="p-4 text-right">
+                                        <template x-if="job.local_path">
+                                            <button @click.stop="openFolder(job.id)"
+                                                class="text-gray-500 hover:text-blue-600 flex items-center justify-end space-x-1 ml-auto"
+                                                title="Show in Finder">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor"
+                                                    viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                                        stroke-width="2"
+                                                        d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z">
+                                                    </path>
+                                                </svg>
+                                                <span class="text-xs truncate max-w-[100px]"
+                                                    x-text="job.local_path.split('/').pop()"></span>
+                                            </button>
+                                        </template>
+                                        <span x-show="!job.local_path" class="text-gray-300 text-xs">-</span>
+                                    </td>
+                                    <td class="p-4 text-right">
+                                        <div class="flex items-center justify-end space-x-1">
+                                            <!-- Start (Draft/Pending) -->
+                                            <button
+                                                x-show="['draft', 'pending'].includes(job.status) && currentTab !== 'history'"
+                                                @click.stop="batchAction('start_selected', [job.id])"
+                                                class="text-green-600 hover:text-green-800 p-1.5 rounded hover:bg-green-50 transition"
+                                                title="Start">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor"
+                                                    viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                                        stroke-width="2"
+                                                        d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z">
+                                                    </path>
+                                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                                        stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                                </svg>
+                                            </button>
+
+                                            <!-- Retry (Failed only) -->
+                                            <button
+                                                x-show="['failed', 'cancelled'].includes(job.status) && currentTab !== 'history'"
+                                                @click.stop="batchAction('retry_selected', [job.id])"
+                                                class="text-blue-600 hover:text-blue-800 p-1.5 rounded hover:bg-blue-50 transition"
+                                                title="Retry">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor"
+                                                    viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                                        stroke-width="2"
+                                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                                                    </path>
+                                                </svg>
+                                            </button>
+
+                                            <!-- Cancel (Running) -->
+                                            <button
+                                                x-show="['pending', 'processing', 'sent_prompt', 'generating', 'download'].includes(job.status)"
+                                                @click.stop="cancelJob(job.id)"
+                                                class="text-orange-600 hover:text-orange-900 p-1.5 rounded hover:bg-orange-50 transition"
+                                                title="Cancel">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor"
+                                                    viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                                        stroke-width="2"
+                                                        d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z">
+                                                    </path>
+                                                </svg>
+                                            </button>
+
+                                            <!-- Duplicate -->
+                                            <button @click.stop="duplicateJob(job)"
+                                                class="text-gray-600 hover:text-gray-900 p-1.5 rounded hover:bg-gray-50 transition"
+                                                title="Duplicate">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor"
+                                                    viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                                        stroke-width="2"
+                                                        d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2">
+                                                    </path>
+                                                </svg>
+                                            </button>
+
+                                            <!-- Edit -->
+                                            <button @click.stop="openEditModal(job)" x-show="currentTab !== 'history'"
+                                                class="text-indigo-600 hover:text-indigo-900 p-1.5 rounded hover:bg-indigo-50 transition"
+                                                title="Edit">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor"
+                                                    viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                                        stroke-width="2"
+                                                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z">
+                                                    </path>
+                                                </svg>
+                                            </button>
+
+                                            <!-- Delete -->
+                                            <button @click.stop="deleteJob(job.id)"
+                                                class="text-red-600 hover:text-red-900 p-1.5 rounded hover:bg-red-50 transition"
+                                                title="Delete">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor"
+                                                    viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                                        stroke-width="2"
+                                                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                                                    </path>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+
+                                <!-- Task Breakdown Row REMOVED -->
+                            </tbody>
+                        </template>
+
+                        <tbody x-show="jobs.length === 0">
+                            <tr>
+                                <td colspan="8" class="p-8 text-center text-gray-500">No jobs in queue. Create one to
+                                    start.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- About/License Tab -->
+        <div x-show="currentTab === 'about'" x-transition.opacity>
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-3xl font-bold text-gray-800">About & License</h2>
+            </div>
+
+            <div class="bg-white p-8 rounded-lg shadow-md max-w-2xl">
+                <div class="mb-6">
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">System Information</h3>
+                    <p class="text-gray-600">Uni-Video Automation v1.1.0</p>
+                    <p class="text-gray-500 text-sm mt-1">Automated Video Generation Tool powered by Sora.</p>
+                </div>
+
+                <hr class="my-6 border-gray-200">
+
+                <div class="mb-6">
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">License Status</h3>
+
+                    <div class="grid grid-cols-1 gap-4">
+                        <div class="bg-gray-50 p-4 rounded border border-gray-200">
+                            <span class="block text-xs uppercase text-gray-500 font-bold mb-1">Hardware ID (HWID)</span>
+                            <div class="flex items-center space-x-2">
+                                <code
+                                    class="text-sm font-mono bg-white px-2 py-1 rounded border border-gray-300 select-all"
+                                    x-text="licenseInfo.hardware_id || 'Loading...'"></code>
+                                <button
+                                    @click="navigator.clipboard.writeText(licenseInfo.hardware_id); showToast('Copied HWID', 'success')"
+                                    class="text-blue-600 text-xs hover:underline">Copy</button>
+                            </div>
+                        </div>
+
+                        <div class="bg-gray-50 p-4 rounded border border-gray-200">
+                            <span class="block text-xs uppercase text-gray-500 font-bold mb-1">Expiration Date</span>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-lg font-bold"
+                                    :class="licenseInfo.status === 'valid' ? 'text-green-600' : 'text-red-600'"
+                                    x-text="licenseInfo.expiration || 'Unknown'"></span>
+
+                                <span x-show="licenseInfo.status === 'valid'"
+                                    class="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full font-bold">ACTIVE</span>
+                                <span x-show="licenseInfo.status !== 'valid'"
+                                    class="text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded-full font-bold"
+                                    x-text="(licenseInfo.status || 'INVALID').toUpperCase()"></span>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1" x-text="licenseInfo.message"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-8">
+                    <h3 class="text-lg font-bold text-gray-800 mb-2">Update License Key</h3>
+                    <div class="flex space-x-2">
+                        <input type="text" x-model="newLicenseKey" placeholder="Paste new license key here..."
+                            class="flex-1 border p-2.5 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono text-sm">
+                        <button @click="updateLicense()"
+                            class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded shadow font-bold transition-colors">
+                            Activate
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+    </div>
+
+
+
+    <!-- Edit Job Modal -->
+    <div x-show="editingJob" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]"
+        x-cloak>
+        <div class="bg-white p-8 rounded-lg shadow-xl w-[500px] transform transition-all"
+            @click.away="editingJob = null">
+            <h3 class="text-xl font-bold mb-4 text-gray-800">Edit Job <span x-text="'#' + editingJob?.id"></span></h3>
+
+            <template x-if="editingJob">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Prompt</label>
+                        <textarea x-model="editingJob.prompt" rows="4"
+                            class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Duration (s)</label>
+                            <select x-model="editingJob.duration"
+                                class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500">
+                                <option value="5">5 seconds</option>
+                                <option value="10">10 seconds</option>
+                                <option value="15">15 seconds</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Aspect Ratio</label>
+                            <select x-model="editingJob.aspect_ratio"
+                                class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500">
+                                <option value="16:9">16:9 (Landscape)</option>
+                                <option value="9:16">9:16 (Portrait)</option>
+                                <option value="1:1">1:1 (Square)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Image Upload for Edit -->
+                    <div class="mt-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Upload Image (Changes
+                            Request)</label>
+
+                        <div class="flex items-center space-x-2" x-show="editingJob.image_path">
+                            <span class="text-xs text-green-600 font-medium">Currently attached: <span
+                                    x-text="editingJob.image_path.split(/[\\/]/).pop()"></span></span>
+                            <button @click="editingJob.image_path = null"
+                                class="text-red-500 text-xs hover:underline">Remove</button>
+                        </div>
+
+                        <input type="file" @change="async (e) => {
+                                    /* Reuse upload logic but set editingJob.image_path */
+                                     const file = e.target.files[0];
+                                     if (!file) return;
+                                     const formData = new FormData();
+                                     formData.append('file', file);
+                                     try {
+                                         const res = await fetch('/api/jobs/upload', { method: 'POST', body: formData });
+                                         if(res.ok) {
+                                             const data = await res.json();
+                                             editingJob.image_path = data.path;
+                                             // No global toast here, maybe local indication?
+                                             alert('Image attached!');
+                                         } else { alert('Upload failed'); }
+                                     } catch(err) { alert('Error: ' + err); }
+                                     e.target.value = '';
+                                }" accept="image/*"
+                            class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    </div>
+                </div>
+            </template>
+
+            <div class="flex justify-end space-x-2 mt-6">
+                <button @click="editingJob = null"
+                    class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                <button @click="updateJob()"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded shadow">Save
+                    Changes</button>
+            </div>
+        </div>
+    </div>
+    </div>
+    </div>
+
+    <!-- Add Account Modal -->
+    <div x-show="showAddAccountModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+        x-cloak>
+        <div class="bg-white p-8 rounded-lg shadow-xl w-96 transform transition-all"
+            @click.away="showAddAccountModal = false">
+            <h3 class="text-xl font-bold mb-4 text-gray-800">Add Account</h3>
+            <div class="space-y-3">
+                <input type="text" x-model="newAccount.email" placeholder="Email"
+                    class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                <input type="password" x-model="newAccount.password" placeholder="Password"
+                    class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                <input type="text" x-model="newAccount.proxy" placeholder="Proxy (ip:port:user:pass)"
+                    class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            </div>
+            <div class="flex justify-end space-x-2 mt-6">
+                <button @click="showAddAccountModal = false"
+                    class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                <button @click="addAccount()"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded shadow">Add</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Job Modal -->
+    <div x-show="showAddJobModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+        x-cloak>
+        <div class="bg-white p-8 rounded-lg shadow-xl w-[500px] transform transition-all"
+            @click.away="showAddJobModal = false">
+            <h3 class="text-xl font-bold mb-4 text-gray-800">Create New Job</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Prompt</label>
+                    <textarea x-model="newJob.prompt" rows="4" placeholder="Describe your video..."
+                        class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Duration (s)</label>
+                        <select x-model="newJob.duration"
+                            class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500">
+                            <option value="5">5 seconds</option>
+                            <option value="10">10 seconds</option>
+                            <option value="15">15 seconds</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Aspect Ratio</label>
+                        <select x-model="newJob.aspect_ratio"
+                            class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500">
+                            <option value="16:9">16:9 (Landscape)</option>
+                            <option value="9:16">9:16 (Portrait)</option>
+                            <option value="1:1">1:1 (Square)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Image Upload (Optional) -->
+                <div class="mt-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Upload Image (Optional)</label>
+                    <input type="file" @change="handleFileUpload($event)" accept="image/*"
+                        class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    <p class="text-xs text-gray-500 mt-1" x-show="uploadingImage">Uploading...</p>
+                    <p class="text-xs text-green-600 mt-1" x-show="newJob.image_path">Image attached successfully ✅</p>
+                </div>
+
+
+                <!-- Login Mode REMOVED -->
+                <!-- Quantity Field -->
+                <div class="mt-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Quantity (Copies)</label>
+                    <input type="number" x-model="newJob.quantity" min="1" max="50"
+                        class="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        placeholder="1">
+                    <p class="text-xs text-gray-500 mt-1">Number of videos to generate with this prompt.</p>
+                </div>
+            </div>
+            <div class="flex justify-end space-x-2 mt-6">
+                <button @click="showAddJobModal = false"
+                    class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                <button @click="addJob()"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded shadow">Create Job</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Job Detail Modal -->
+    <div x-show="selectedJob" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+        x-cloak>
+        <div class="bg-white p-8 rounded-lg shadow-xl w-[600px] max-h-[90vh] overflow-y-auto"
+            @click.away="selectedJob = null" x-transition>
+            <div class="flex justify-between items-start mb-4">
+                <h3 class="text-2xl font-bold text-gray-800">Job Details <span x-text="'#' + selectedJob?.id"
+                        class="text-gray-500 text-lg font-normal"></span></h3>
+                <button @click="selectedJob = null" class="text-gray-500 hover:text-gray-700">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
+                    </svg>
+                </button>
+            </div>
+
+            <template x-if="selectedJob">
+                <div class="space-y-4">
+                    <div>
+                        <div class="text-sm font-medium text-gray-500">Prompt</div>
+                        <div class="p-3 bg-gray-50 rounded border mt-1 text-gray-800" x-text="selectedJob.prompt"></div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <div class="text-sm font-medium text-gray-500">Status</div>
+                            <div class="mt-1 font-medium capitalize" :class="{
+                                'text-yellow-600': selectedJob.status === 'pending',
+                                'text-blue-600': selectedJob.status === 'processing',
+                                'text-indigo-600': selectedJob.status === 'sent_prompt',
+                                'text-purple-600': selectedJob.status === 'generating',
+                                'text-orange-600': selectedJob.status === 'download',
+                                'text-green-600': selectedJob.status === 'completed' || selectedJob.status === 'done',
+                                'text-red-600': selectedJob.status === 'failed'
+                             }" x-text="selectedJob.status"></div>
+                        </div>
+                        <div>
+                            <div class="text-sm font-medium text-gray-500">Settings</div>
+                            <div class="mt-1 text-gray-800"
+                                x-text="selectedJob.duration + 's, ' + selectedJob.aspect_ratio"></div>
+                        </div>
+                    </div>
+
+                    <!-- Task Actions (Manual Run) REMOVED -->
+
+                    <div x-show="selectedJob.error_message">
+                        <div class="text-sm font-medium text-red-500">Error Logs</div>
+                        <div class="p-3 bg-red-50 rounded border border-red-200 mt-1 text-red-800 text-sm font-mono break-all"
+                            x-text="selectedJob.error_message"></div>
+                    </div>
+
+                    <div x-show="selectedJob.video_url || selectedJob.local_path" class="mt-4">
+                        <div class="text-sm font-medium text-gray-500 mb-2">Video Result</div>
+                        <!-- Placeholder for video player -->
+                        <div
+                            class="w-full aspect-video bg-black flex items-center justify-center rounded overflow-hidden">
+                            <template x-if="selectedJob.local_path">
+                                <video controls autoplay muted class="w-full h-full object-contain">
+                                    <source :src="selectedJob.local_path" type="video/mp4">
+                                    Your browser does not support the video tag.
+                                </video>
+                            </template>
+                            <template x-if="!selectedJob.local_path">
+                                <span class="text-white text-sm">Preview Local Video Not Available</span>
+                            </template>
+                        </div>
+                        <div class="mt-2 text-right space-x-2">
+                            <button @click="openVideo(selectedJob.id)" x-show="selectedJob.local_path"
+                                class="text-blue-600 hover:underline text-sm font-medium">
+                                ▶ Play in Default Player
+                            </button>
+                            <span class="text-gray-300">|</span>
+                            <a :href="selectedJob.local_path || selectedJob.video_url" target="_blank"
+                                class="text-blue-600 hover:underline text-sm"
+                                x-text="selectedJob.local_path ? 'Download / View in Browser' : 'Open External Link'"></a>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <div class="flex justify-end space-x-2 mt-6 pt-4 border-t">
+                <!-- Actions -->
+                <button x-show="selectedJob?.status === 'draft' || selectedJob?.status === 'pending'"
+                    @click="openEditModal(selectedJob)"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded shadow transition-colors">
+                    Edit
+                </button>
+
+                <button x-show="selectedJob?.status === 'pending' || selectedJob?.status === 'processing'"
+                    @click="cancelJob(selectedJob.id)"
+                    class="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded shadow transition-colors">
+                    Cancel Job
+                </button>
+
+                <button x-show="selectedJob?.status === 'failed'" @click="retryJob(selectedJob.id); selectedJob = null"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded shadow transition-colors">
+                    Retry Job
+                </button>
+
+                <button @click="deleteJob(selectedJob.id)"
+                    class="px-4 py-2 bg-red-100 text-red-700 hover:bg-red-200 rounded transition-colors">
+                    Delete
+                </button>
+
+                <button @click="selectedJob = null"
+                    class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div x-show="toast.show" x-transition.opacity class="fixed bottom-5 right-5 px-4 py-2 rounded shadow-lg text-white"
+        :class="toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'" style="z-index: 50;">
+        <span x-text="toast.message"></span>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        function appData() {
+            return {
+                currentTab: 'dashboard',
+                sidebarCollapsed: false,
+                showAddAccountModal: false,
+                showAddJobModal: false,
+                selectedJob: null,
+                accounts: [],
+                jobs: [],
+                systemStatus: { paused: false, queue_info: {}, active_jobs: [] },
+                stats: { activeAccounts: 0, pendingJobs: 0, completedJobs: 0 },
+                newAccount: { platform: 'sora', email: '', password: '', proxy: '' },
+                newJob: { prompt: '', duration: '5', aspect_ratio: '16:9', quantity: 1, image_path: null },
+                refreshingAccounts: false,
+                checkingCredits: false,
+                uploadingImage: false,
+                toast: { show: false, message: '', type: 'success' },
+
+                async handleFileUpload(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+
+                    this.uploadingImage = true;
+                    const formData = new FormData();
+                    formData.append('file', file);
+
+                    try {
+                        const response = await fetch('/api/jobs/upload', {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        if (response.ok) {
+                            const data = await response.json();
+                            this.newJob.image_path = data.path;
+                            this.showToast('Image uploaded successfully', 'success');
+                        } else {
+                            this.showToast('Upload failed', 'error');
+                            event.target.value = ''; // Reset input
+                        }
+                    } catch (e) {
+                        console.error('Upload Error:', e);
+                        this.showToast('Upload error: ' + e.message, 'error');
+                        event.target.value = '';
+                    } finally {
+                        this.uploadingImage = false;
+                    }
+                },
+
+                showToast(message, type = 'success') {
+                    this.toast.message = message;
+                    this.toast.type = type;
+                    this.toast.show = true;
+                    setTimeout(() => {
+                        this.toast.show = false;
+                    }, 3000);
+                },
+
+                async checkAllCredits() {
+                    this.checkingCredits = true;
+                    try {
+                        const response = await fetch('/api/accounts/check_credits', { method: 'POST' });
+                        const result = await response.json();
+
+                        // Build detailed message
+                        let message = `✅ Updated: ${result.updated}`;
+                        if (result.expired > 0) {
+                            message += ` | ⚠️ Expired: ${result.expired}`;
+                        }
+                        if (result.no_token > 0) {
+                            message += ` | 🔑 No Token: ${result.no_token}`;
+                        }
+                        if (result.failed > 0) {
+                            message += ` | ❌ Failed: ${result.failed}`;
+                        }
+
+                        // Show appropriate toast type
+                        const toastType = (result.expired > 0 || result.failed > 0) ? 'error' : 'success';
+                        this.showToast(message, toastType);
+
+                        // If there are expired tokens, show alert with details
+                        if (result.expired > 0) {
+                            const expiredAccounts = result.details
+                                .filter(d => d.status === 'expired')
+                                .map(d => d.email)
+                                .join('\n  - ');
+                            alert(`⚠️ ${result.expired} account(s) có token đã hết hạn:\n\n  - ${expiredAccounts}\n\n👆 Vui lòng nhấn nút "Re-Login" để đăng nhập lại!`);
+                        }
+
+                        await this.fetchAccounts();
+                    } catch (error) {
+                        console.error('Check credits failed', error);
+                        this.showToast('Failed to check credits: ' + error.message, 'error');
+                    } finally {
+                        this.checkingCredits = false;
+                    }
+                },
+
+                formatDate(dateStr) {
+                    if (!dateStr) return '-';
+                    const d = new Date(dateStr);
+                    return d.toLocaleString('vi-VN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                },
+
+                timeUntil(dateStr) {
+                    if (!dateStr) return '-';
+                    const d = new Date(dateStr);
+                    const now = new Date();
+                    const diff = d - now;
+
+                    if (diff < 0) return 'Expired';
+
+                    const hours = Math.floor(diff / (1000 * 60 * 60));
+                    const days = Math.floor(hours / 24);
+
+                    if (days > 0) return `${days}d ${hours % 24}h`;
+                    if (hours > 0) return `${hours}h`;
+                    return '< 1h';
+                },
+
+                isExpired(dateStr) {
+                    if (!dateStr) return false;
+                    return new Date(dateStr) < new Date();
+                },
+
+                async refreshAllAccounts() {
+                    this.refreshingAccounts = true;
+                    try {
+                        const res = await fetch('/api/accounts/refresh_all', { method: 'POST' });
+                        const data = await res.json();
+                        alert(`Refresh Complete!\n\nTotal: ${data.total}\nValid: ${data.valid}\nExpired: ${data.expired}\nErrors: ${data.errors}`);
+                    } catch (e) {
+                        alert(`Refresh failed: ${e}`);
+                    } finally {
+                        this.refreshingAccounts = false;
+                        this.fetchAccounts();
+                    }
+                },
+
+
+
+                init() {
+                    this.fetchAccounts();
+                    this.fetchJobs();
+                    this.fetchSystemStatus();
+                    setInterval(() => { this.fetchJobs(); this.fetchSystemStatus(); }, 5000);
+                },
+
+                async fetchSystemStatus() {
+                    try {
+                        const res = await fetch('/api/system/queue_status');
+                        if (res.ok) {
+                            const newStatus = await res.json();
+
+                            // Check for pause transition (Notification)
+                            if (newStatus.paused && !this.systemStatus.paused && newStatus.pause_reason) {
+                                this.showToast('🛑 System Paused: ' + newStatus.pause_reason, 'error');
+                                alert('🛑 HỆ THỐNG TẠM DỪNG: ' + newStatus.pause_reason + '\n\nVui lòng kiểm tra tài khoản và nạp thêm credits.');
+                            }
+
+                            this.systemStatus = newStatus;
+                            // Update global stats from DB if available
+                            if (this.systemStatus.db_stats) {
+                                this.stats.completedJobs = this.systemStatus.db_stats.completed;
+                                this.stats.pendingJobs = this.systemStatus.db_stats.pending;
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Status fetch error", e);
+                    }
+                },
+
+                async toggleSystemPause(pause) {
+                    const endpoint = pause ? '/api/system/pause' : '/api/system/resume';
+                    try {
+                        const res = await fetch(endpoint, { method: 'POST' });
+                        if (res.ok) {
+                            const data = await res.json();
+                            this.showToast(data.message, 'success');
+                            this.fetchSystemStatus(); // Refresh immediately
+                        } else {
+                            this.showToast('Failed to toggle pause', 'error');
+                        }
+                    } catch (e) {
+                        this.showToast('Error: ' + e, 'error');
+                    }
+                },
+
+                async fetchAccounts() {
+                    const res = await fetch('/api/accounts/');
+                    this.accounts = await res.json();
+                    // Count accounts with credits (no more status column)
+                    this.stats.activeAccounts = this.accounts.filter(a =>
+                        a.credits_remaining === null || a.credits_remaining > 0
+                    ).length;
+                },
+
+                async deleteAccount(id) {
+                    if (!confirm('Are you sure you want to delete this account?')) return;
+
+                    try {
+                        const res = await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
+                        if (res.ok) {
+                            this.fetchAccounts();
+                        } else {
+                            alert("Failed to delete account");
+                        }
+                    } catch (e) {
+                        alert(`Error: ${e}`);
+                    }
+                },
+
+                async loginAccount(id) {
+                    const acc = this.accounts.find(a => a.id === id);
+                    if (!acc) return;
+
+                    if (acc.login_mode === 'manual') {
+                        if (confirm(`Account ${acc.email} is in MANUAL mode.\n\nUse Manual Login for this account?`)) {
+                            this.globalManualLogin();
+                        }
+                        return;
+                    }
+
+                    if (!confirm(`Start Auto-Login for: ${acc.email}?\n\nThis will open a browser window. You may need to solve captcha manually.`)) return;
+
+                    // Show loading state
+                    const originalStatus = acc.token_status;
+                    acc.token_status = 'logging_in';
+
+                    try {
+                        const res = await fetch(`/api/accounts/${id}/login`, { method: 'POST' });
+                        const data = await res.json();
+
+                        if (res.ok && data.ok) {
+                            alert(`✅ Login successful!\n\nToken captured for ${acc.email}`);
+                        } else {
+                            alert(`❌ Login failed: ${data.detail || 'Unknown error'}`);
+                        }
+                    } catch (e) {
+                        alert(`❌ Login error: ${e}`);
+                    } finally {
+                        this.fetchAccounts();
+                    }
+                },
+
+                async globalManualLogin() {
+                    const msg = "Start GLOBAL MANUAL Login?\n\n- Opens a browser.\n- You login with ANY account.\n- System captures email & token.\n- Updates existing account or Creates new one.";
+                    if (!confirm(msg)) return;
+
+                    try {
+                        const res = await fetch('/api/accounts/global_manual_login', { method: 'POST' });
+                        const data = await res.json();
+
+                        if (res.ok && data.ok) {
+                            alert(`✅ Login Successful!\n\nDetected Email: ${data.email}\nToken captured & Account updated.`);
+                        } else {
+                            alert(`❌ Login failed: ${data.detail || 'Unknown error'}`);
+                        }
+                    } catch (e) {
+                        alert(`❌ Error: ${e}`);
+                    } finally {
+                        this.fetchAccounts();
+                    }
+                },
+
+                async fetchJobs() {
+                    let url = '/api/jobs/';
+                    // Filter by tab
+                    if (this.currentTab === 'history') {
+                        url += '?category=history';
+                    } else {
+                        // Dashboard and Jobs Queue show Active
+                        url += '?category=active';
+                    }
+
+                    const res = await fetch(url);
+                    this.jobs = await res.json();
+
+                    // Stats are now updated by fetchSystemStatus mostly, but we can keep safe fallback or relying on systemStatus
+                    // this.stats.pendingJobs = ... // No, use systemStatus for global counts
+                    // this.stats.completedJobs = ...
+
+                    // Update detail view if open
+                    if (this.selectedJob) {
+                        const updated = this.jobs.find(j => j.id === this.selectedJob.id);
+                        if (updated) this.selectedJob = updated;
+                    }
+                },
+
+                async addAccount() {
+                    await fetch('/api/accounts/', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this.newAccount)
+                    });
+                    this.showAddAccountModal = false;
+                    this.newAccount = { platform: 'sora', email: '', password: '', proxy: '' };
+                    this.fetchAccounts();
+                },
+
+                async addJob() {
+                    const count = parseInt(this.newJob.quantity) || 1;
+
+                    // Frontend loop to create multiple jobs
+                    for (let i = 0; i < count; i++) {
+                        await fetch('/api/jobs/', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                prompt: this.newJob.prompt,
+                                duration: this.newJob.duration,
+                                aspect_ratio: this.newJob.aspect_ratio,
+                                image_path: this.newJob.image_path
+                            })
+                        });
+                        // Small delay to ensure order?
+                    }
+
+                    this.showAddJobModal = false;
+                    this.newJob = { prompt: '', duration: '5', aspect_ratio: '16:9', quantity: 1, image_path: null };
+                    this.fetchJobs();
+                    this.currentTab = 'jobs';
+                },
+
+                viewJobDetail(job) {
+                    this.selectedJob = job;
+                },
+
+                async deleteJob(id) {
+                    if (!confirm('Are you sure you want to delete this job?')) return;
+                    await fetch(`/api/jobs/${id}`, { method: 'DELETE' });
+                    this.fetchJobs();
+                    if (this.selectedJob && this.selectedJob.id === id) this.selectedJob = null;
+                },
+
+                async duplicateJob(job) {
+                    // Quick duplicate
+                    // Confirmation removed as per user request
+
+                    try {
+                        await fetch('/api/jobs/', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                prompt: job.prompt,
+                                duration: job.duration || 5, // fallback
+                                aspect_ratio: job.aspect_ratio || "16:9",
+                                image_path: job.image_path || null
+                            })
+                        });
+
+                        this.showToast("Job duplicated!", "success");
+
+                        // Switch to Active Queue to see it
+                        if (this.currentTab === 'history') {
+                            this.currentTab = 'jobs';
+                        }
+                        this.fetchJobs();
+
+                    } catch (e) {
+                        alert("Failed to duplicate: " + e);
+                    }
+                },
+
+                async retryTask(jobId, taskType) {
+                    if (taskType === 'generate') {
+                        if (confirm('Retry Generate will restart the entire job (deducting new credits). Continue?')) {
+                            this.retryJob(jobId);
+                        }
+                    } else if (taskType === 'download' || taskType === 'poll') {
+                        // Use the bulk action for single item retry
+                        await fetch('/api/jobs/bulk_action', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                action: 'retry_download_selected',
+                                job_ids: [jobId]
+                            })
+                        });
+                        this.fetchJobs();
+                    }
+                },
+
+                async retryJob(id) {
+                    const res = await fetch(`/api/jobs/${id}/retry`, { method: 'POST' });
+                    if (!res.ok) {
+                        const data = await res.json().catch(() => ({}));
+                        alert('Failed to retry: ' + (data.detail || res.statusText));
+                        return;
+                    }
+                    this.fetchJobs();
+                },
+
+                async runTask(jobId, taskName) {
+                    const res = await fetch(`/api/jobs/${jobId}/tasks/${taskName}/run`, { method: 'POST' });
+                    const data = await res.json();
+                    if (data.ok) {
+                        this.fetchJobs();
+                    } else {
+                        alert('Failed to run task: ' + (data.detail || 'Unknown error'));
+                    }
+                },
+
+                async cancelJob(id) {
+                    if (!confirm('Are you sure you want to CANCEL this job?')) return;
+                    await fetch(`/api/jobs/${id}/cancel`, { method: 'POST' });
+                    this.fetchJobs();
+                    if (this.selectedJob && this.selectedJob.id === id) this.selectedJob = null;
+                },
+
+                editingJob: null,
+
+                openEditModal(job) {
+                    // Clone object to avoid reactive updates before save
+                    this.editingJob = JSON.parse(JSON.stringify(job));
+                },
+
+                async toggleLoginMode(acc) {
+                    // This assumes we have an endpoint/way to update it.
+                    // Actually, a quick way is to delete and re-add OR add a patch endpoint.
+                    // For now, let's just add a simple PATCH or PUT endpoint if not exists.
+                    // Wait, we don't have a specific PATCH endpoint for account settings yet.
+                    // Let's implement a quick toggle in JS if backend supported it.
+                    // Since backend doesn't have a direct PATCH, I will just prompt user:
+                    // "Mode is auto-detected. Use Manual Login to switch to Manual."
+                    const newMode = (acc.login_mode === 'manual') ? 'auto' : 'manual';
+                    if (!confirm(`Switch login mode to ${newMode.toUpperCase()}?`)) return;
+
+                    // We need a way to save this change.
+                    // I'll assume I can add a small endpoint or just ... 
+                    // Let's rely on Backend migration for now and maybe add a quick PATCH endpoint next step?
+                    // Actually, I should add the endpoint first. BUT for now, I'll just alert.
+                    alert("Currently, mode switches to 'Manual' automatically when you use Manual Login.\n\nTo switch back to Auto, please delete and re-add the account with password.");
+                },
+
+                async startWorkers() {
+                    try {
+                        const res = await fetch('/api/settings/start_workers', { method: 'POST' });
+                        if (res.ok) {
+                            alert('System started! Workers are running in background.');
+                        } else {
+                            alert('Failed to start system.');
+                        }
+                    } catch (e) {
+                        alert('Error starting system: ' + e);
+                    }
+                },
+
+                async updateJob() {
+                    if (!this.editingJob) return;
+                    await fetch(`/api/jobs/${this.editingJob.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            prompt: this.editingJob.prompt,
+                            duration: this.editingJob.duration,
+                            aspect_ratio: this.editingJob.aspect_ratio,
+                            image_path: this.editingJob.image_path
+                        })
+                    });
+                    this.editingJob = null;
+                    this.fetchJobs();
+                },
+
+                async openFolder(jobId) {
+                    await fetch(`/api/jobs/${jobId}/open_folder`, {
+                        method: 'POST'
+                    });
+                },
+
+                licenseInfo: { status: 'loading', hardware_id: '', expiration: '', message: '' },
+                newLicenseKey: '',
+
+                async fetchLicenseInfo() {
+                    try {
+                        const res = await fetch('/api/license/info');
+                        this.licenseInfo = await res.json();
+                    } catch (e) {
+                        console.error(e);
+                        this.licenseInfo.message = "Failed to load license info.";
+                    }
+                },
+
+                async updateLicense() {
+                    if (!this.newLicenseKey) return;
+                    try {
+                        const res = await fetch('/api/license/update', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ key: this.newLicenseKey.trim() })
+                        });
+                        const data = await res.json();
+
+                        if (data.success) {
+                            alert("✅ License Updated Successfully!\n\nExpires: " + data.expiration);
+                            this.newLicenseKey = '';
+                            this.fetchLicenseInfo();
+                        } else {
+                            alert("❌ Update Failed:\n" + data.message);
+                        }
+                    } catch (e) {
+                        alert("Error: " + e);
+                    }
+                },
+
+                async openVideo(jobId) {
+                    try {
+                        const res = await fetch(`/api/jobs/${jobId}/open_video`, { method: 'POST' });
+                        if (!res.ok) {
+                            const data = await res.json().catch(() => ({}));
+                            alert("Failed to open video: " + (data.detail || "Unknown error"));
+                        }
+                    } catch (e) {
+                        alert("Error: " + e);
+
+                    }
+                },
+
+                async bulkAction(action) {
+                    const skipConfirm = ['start_all', 'retry_failed'];
+                    if (!skipConfirm.includes(action) && !confirm(`Are you sure you want to perform: ${action.replace('_', ' ')}?`)) return;
+                    const res = await fetch('/api/jobs/bulk_action', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: action })
+                    });
+
+                    if (!res.ok) {
+                        const data = await res.json().catch(() => ({}));
+                        alert('Bulk action failed: ' + (data.detail || res.statusText));
+                        return;
+                    }
+
+                    this.fetchJobs();
+                },
+
+                // Selection Logic
+                selectedIds: [],
+
+                toggleAll(e) {
+                    if (e.target.checked) {
+                        this.selectedIds = this.jobs.map(j => j.id);
+                    } else {
+                        this.selectedIds = [];
+                    }
+                },
+
+                async batchAction(action, ids = null) {
+                    const targetIds = ids || this.selectedIds;
+                    if (targetIds.length === 0) return;
+
+                    // Skip confirm for start_selected (safe action) or if explicit IDs passed (user clicked direct button)
+                    const needsConfirm = action !== 'start_selected' && !ids;
+                    if (needsConfirm && !confirm(`Perform '${action}' on ${targetIds.length} items?`)) return;
+
+                    const res = await fetch('/api/jobs/bulk_action', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: action,
+                            job_ids: targetIds
+                        })
+                    });
+
+                    if (!res.ok) {
+                        const data = await res.json().catch(() => ({}));
+                        alert('Batch action failed: ' + (data.detail || res.statusText));
+                        return;
+                    }
+
+                    this.selectedIds = [];
+                    this.fetchJobs();
+                },
+
+                async systemReset() {
+                    if (!confirm('⚠️ SYSTEM RESET\n\n- Clear busy account flags\n- Reset "processing" jobs to "pending"\n\nUse this only if jobs are stuck. Continue?')) return;
+
+                    const res = await fetch('/api/system/reset', { method: 'POST' });
+                    const data = await res.json();
+
+                    if (data.ok) {
+                        alert(`System reset complete. Reset ${data.reset_count} stuck jobs.`);
+                        this.fetcs()
+                    } else {
+                        alert('System reset failed.');
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+
+</html>

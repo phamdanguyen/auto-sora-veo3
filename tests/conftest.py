@@ -14,9 +14,9 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.database import Base
-from app.main import app
 from app.api.dependencies import get_db
 from app.core.container import Container
+from tests.test_app import app
 
 
 @pytest.fixture(scope="session")

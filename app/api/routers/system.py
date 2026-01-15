@@ -198,3 +198,91 @@ async def restart_workers():
     except ImportError:
         # Worker manager not yet fully integrated, using legacy worker_v2
         return {"ok": False, "message": "Worker manager not available - using legacy workers"}
+
+
+@router.get("/license")
+async def get_license_info():
+    """
+    Get detailed license information
+
+    Returns license status including:
+    - Current status (valid/expired/missing)
+    - Expiration date
+    - Days remaining
+    - Expiry warnings (if within 7-14 days)
+    - Hardware ID
+
+    Returns:
+        License status dictionary
+    """
+    from ...core.license_manager import LicenseManager
+
+    try:
+        status = LicenseManager.get_license_status()
+        return {"ok": True, "license": status}
+    except Exception as e:
+        logger.error(f"Failed to get license info: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+@router.post("/license/update")
+async def update_license_key(key: str):
+    """
+    Update license key
+
+    Validates and saves a new license key.
+
+    Args:
+        key: License key string
+
+    Returns:
+        Validation result and new license status
+    """
+    from ...core.license_manager import LicenseManager
+
+    try:
+        # Validate the key first
+        is_valid, message, expiry = LicenseManager.validate_key(key)
+
+        if is_valid:
+            # Save the key
+            LicenseManager.save_key(key)
+
+            # Get new status
+            status = LicenseManager.get_license_status()
+
+            return {
+                "ok": True,
+                "message": "License key updated successfully",
+                "expiration": expiry,
+                "license": status
+            }
+        else:
+            return {
+                "ok": False,
+                "error": message
+            }
+    except Exception as e:
+        logger.error(f"Failed to update license key: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+@router.get("/license/hardware_id")
+async def get_hardware_id():
+    """
+    Get machine hardware ID
+
+    Returns the current machine's hardware ID for license generation.
+    This uses a composite hash of multiple hardware identifiers.
+
+    Returns:
+        Hardware ID string
+    """
+    from ...core.license_manager import LicenseManager
+
+    try:
+        hwid = LicenseManager.get_hardware_id()
+        return {"ok": True, "hardware_id": hwid}
+    except Exception as e:
+        logger.error(f"Failed to get hardware ID: {e}")
+        return {"ok": False, "error": str(e)}

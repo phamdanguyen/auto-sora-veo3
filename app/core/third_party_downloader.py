@@ -75,8 +75,18 @@ class ThirdPartyDownloader:
     @classmethod
     def _get_semaphore(cls):
         """Lazy-init semaphore to avoid event loop issues"""
-        if cls._semaphore is None:
-            cls._semaphore = asyncio.Semaphore(cls._max_concurrent)
+        try:
+            # Check if semaphore exists and is bound to current event loop
+            if cls._semaphore is not None:
+                loop = asyncio.get_running_loop()
+                # Try to check if semaphore is still valid
+                if cls._semaphore._loop is loop:
+                    return cls._semaphore
+        except (RuntimeError, AttributeError):
+            pass
+
+        # Create new semaphore for current event loop
+        cls._semaphore = asyncio.Semaphore(cls._max_concurrent)
         return cls._semaphore
     
     async def download_from_public_link(

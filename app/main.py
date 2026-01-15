@@ -1,5 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
@@ -17,7 +18,10 @@ if sys.platform == 'win32':
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler("server_debug.log", mode='a', encoding='utf-8')
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -45,7 +49,7 @@ async def lifespan(app: FastAPI):
         # This covers: pending, processing, sent_prompt, generating, download
         # Query first to log what we are resetting (Debugging Persistence)
         jobs_to_reset = db.query(models.Job).filter(
-            models.Job.status.notin_(['completed', 'done', 'failed', 'cancelled', 'pending', 'download'])
+            models.Job.status.notin_(['completed', 'done', 'failed', 'cancelled', 'download'])
         ).all()
         
         if jobs_to_reset:
@@ -139,8 +143,8 @@ ABS_UPLOAD_DIR = os.path.abspath("data/uploads")
 os.makedirs(ABS_UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=ABS_UPLOAD_DIR), name="uploads")
 
-
-
+# Templates Configuration
+templates = Jinja2Templates(directory=resource_path("app/web/templates"))
 
 from fastapi.responses import FileResponse
 import asyncio
@@ -168,12 +172,17 @@ app.include_router(system.router, prefix="/api")
 # Since we moved app/api/endpoints.py to app/legacy/endpoints.py,
 # and created app/legacy/__init__.py,
 # we need to import from app.legacy.endpoints
-from .legacy import endpoints as legacy_endpoints
-app.include_router(legacy_endpoints.router, prefix="/api/legacy")
+# from .legacy import endpoints as legacy_endpoints
+# app.include_router(legacy_endpoints.router, prefix="/api/legacy")
 
 @app.get("/")
-async def read_dashboard():
-    return FileResponse(resource_path("app/web/templates/index.html"))
+@app.get("/dashboard")
+@app.get("/accounts")
+@app.get("/jobs")
+@app.get("/history")
+@app.get("/about")
+async def read_dashboard(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

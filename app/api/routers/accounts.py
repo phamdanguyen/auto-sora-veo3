@@ -28,7 +28,15 @@ class AccountCreate(BaseModel):
     platform: str
     email: str
     password: str
+    password: str
     proxy: Optional[str] = None
+
+
+class AccountUpdate(BaseModel):
+    """Schema for updating an account"""
+    login_mode: Optional[str] = None
+    proxy: Optional[str] = None
+    # Add other fields as needed
 
 
 class AccountResponse(BaseModel):
@@ -170,6 +178,35 @@ async def delete_account(
     return {"ok": True}
 
 
+@router.patch("/{account_id}", response_model=AccountResponse)
+async def update_account(
+    account_id: int,
+    data: AccountUpdate,
+    service: AccountService = Depends(get_account_service)
+):
+    """
+    Update account details
+    
+    Args:
+        account_id: Account ID
+        data: Fields to update
+        service: AccountService
+        
+    Returns:
+        Updated account
+        
+    Raises:
+        HTTPException 404: If account not found
+    """
+    account = await service.update_account(
+        account_id,
+        **data.dict(exclude_unset=True)
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return AccountResponse.from_domain(account)
+
+
 @router.post("/{account_id}/refresh_credits", response_model=CreditsResponse)
 async def refresh_credits(
     account_id: int,
@@ -209,19 +246,30 @@ async def refresh_credits(
 # These endpoints require more complex logic and will be implemented later
 # based on the existing endpoints.py implementation
 
-@router.post("/{account_id}/login")
-async def login_account(account_id: int, db: Session = Depends(get_db)):
+
+@router.post("/{account_id}/login", response_model=AccountResponse)
+async def login_account(
+    account_id: int,
+    service: AccountService = Depends(get_account_service)
+):
     """
     Manual login for account
-
+    
     Opens a visible browser, allows user to login manually,
     captures token and saves to DB for headless operation.
-
-    TODO: Implement using AccountService + Driver
     """
-    # Import the old implementation for now
-    from app.legacy.endpoints import login_account as old_login_account
-    return await old_login_account(account_id, db)
+    try:
+        account = await service.login_account(account_id)
+        if not account:
+            raise HTTPException(status_code=404, detail="Account not found or login failed")
+        return AccountResponse.from_domain(account)
+    except TimeoutError:
+         raise HTTPException(status_code=408, detail="Login timed out")
+    except ValueError as e:
+         raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+         logger.error(f"Login failed: {e}", exc_info=True)
+         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/global_manual_login", response_model=AccountResponse)
@@ -247,28 +295,24 @@ async def global_manual_login(
 
 
 @router.post("/check_credits")
-async def check_all_credits(db: Session = Depends(get_db)):
+async def check_all_credits(
+    service: AccountService = Depends(get_account_service)
+):
     """
     Check credits for all accounts
-
+    
     Uses existing tokens only, does not trigger login/browser.
-
-    TODO: Implement using AccountService
     """
-    # Import the old implementation for now
-    from app.legacy.endpoints import check_all_credits as old_check_all_credits
-    return await old_check_all_credits(db)
+    return await service.check_all_credits()
 
 
 @router.post("/refresh_all")
-async def refresh_all_accounts(db: Session = Depends(get_db)):
+async def refresh_all_accounts(
+    service: AccountService = Depends(get_account_service)
+):
     """
     Refresh all accounts
-
+    
     Validates tokens via API, updates credits and reset time.
-
-    TODO: Implement using AccountService
     """
-    # Import the old implementation for now
-    from app.legacy.endpoints import refresh_all_accounts as old_refresh_all_accounts
-    return await old_refresh_all_accounts(db)
+    return await service.refresh_all_accounts()

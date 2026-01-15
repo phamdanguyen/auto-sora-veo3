@@ -7,7 +7,6 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import Mock, AsyncMock, patch
 
-from app.main import app
 from app.api.dependencies import get_account_service
 from app.core.services.account_service import AccountService
 from app.core.domain.account import (
@@ -35,9 +34,12 @@ def mock_account_service():
 @pytest.fixture
 def client(mock_account_service):
     """FastAPI TestClient with mocked service"""
+    # Import test app
+    from tests.test_app import app
+
     app.dependency_overrides[get_account_service] = lambda: mock_account_service
-    test_client = TestClient(app)
-    yield test_client
+    with TestClient(app) as test_client:
+        yield test_client
     app.dependency_overrides.clear()
 
 
