@@ -338,21 +338,34 @@ async def bulk_job_action(
     Raises:
         HTTPException 400: If action is invalid
     """
-    if req.action == "delete":
+    if req.action in ["delete", "delete_selected"]:
         count = await service.bulk_delete_jobs(req.job_ids)
         return {"ok": True, "deleted": count}
 
-    elif req.action == "retry":
+    elif req.action in ["retry", "retry_selected", "retry_download_selected"]:
         results = []
         for job_id in req.job_ids:
             try:
                 await service.retry_job(job_id)
+                # If it was a download retry, we might want to check task state, 
+                # but retry_job resets to PENDING which is safe for full retry.
+                # If specific task retry is needed, logic should differ, 
+                # but for now 'retry_download_selected' effectively restarts the job flow 
+                # or we can rely on task_manager to pick it up.
+                # Re-queueing via task_service as done in single retry endpoint might be better?
+                # The single retry endpoint does:
+                #   job = await service.retry_job(job_id)
+                #   await task_service.start_job(job_id)
+                # We should probably do the same here to ensure it runs.
+                await task_service.start_job(job_id)
+                
                 results.append({"job_id": job_id, "ok": True})
             except Exception as e:
+                # logger.error(f"Retry failed for {job_id}: {e}")
                 results.append({"job_id": job_id, "ok": False, "error": str(e)})
         return {"ok": True, "results": results}
 
-    elif req.action == "cancel":
+    elif req.action in ["cancel", "cancel_selected"]:
         results = []
         for job_id in req.job_ids:
             try:

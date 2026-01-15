@@ -46,7 +46,8 @@ class SoraApiClient:
             "Sec-Fetch-Mode": "cors",
             "Sec-Fetch-Site": "same-origin",
             "oai-device-id": self.device_id or "",
-            "oai-language": "en-US"
+            "oai-language": "en-US",
+            "priority": "u=1, i"
         }
 
     def get_tasks(self, limit: int = 10) -> Dict[str, Any]:
@@ -116,7 +117,8 @@ class SoraApiClient:
 
             logger.info(f"🔌 {self.log_prefix} [API] Uploading image: {filename}...")
             
-            async with AsyncSession(impersonate="chrome120") as session:
+            # Use 'chrome' to match old code
+            async with AsyncSession(impersonate="chrome") as session:
                 response = await session.post(
                     "https://sora.chatgpt.com/backend/project_y/file/upload",
                     headers=headers,
@@ -127,16 +129,23 @@ class SoraApiClient:
 
                 if response.status_code == 200:
                     data = json.loads(response.text)
+                    
+                    # Formatted Response Log
+                    logger.info(f"====== 📥 UPLOAD IMAGE RESPONSE ======")
+                    logger.info(json.dumps(data, indent=2))
+                    logger.info("======================================")
+                    
                     logger.info(f"{self.log_prefix} [OK] [API] Image uploaded: {data.get('file_id')}")
-                    return {
-                        "success": True,
-                        "file_id": data.get('file_id'),
-                        "url": data.get('url'),
-                        "asset_pointer": data.get('asset_pointer')
-                    }
+                    from app.core.drivers.abstractions import UploadResult
+                    return UploadResult(
+                        success=True,
+                        file_id=data.get('file_id'),
+                        error=None
+                    )
                 else:
                     logger.error(f"{self.log_prefix} [ERROR] [API] Upload failed ({response.status_code}): {response.text}")
-                    return {"success": False, "error": f"Upload failed: {response.status_code} - {response.text}"}
+                    from app.core.drivers.abstractions import UploadResult
+                    return UploadResult(success=False, error=f"{response.status_code} - {response.text}")
 
         except Exception as e:
             logger.error(f"[ERROR] [API] Upload exception: {e}")
@@ -150,16 +159,31 @@ class SoraApiClient:
         
         headers = self.headers.copy()
         headers['Content-Type'] = 'application/json'
-        # BUG FIX: Don't overwrite Authorization - it's already properly formatted in self.headers (line 33)
-        # headers['Authorization'] = self.access_token  # REMOVED - this was breaking auth
-        headers['openai-sentinel-token'] = json.dumps(json.loads(sentinel_token) if isinstance(sentinel_token, str) else sentinel_token)
+        
+        # CRITICAL: Serialize sentinel token exactly like old code does
+        # Old code: json.dumps(json.loads(sentinel_payload) if isinstance(sentinel_payload, str) else sentinel_payload)
+        try:
+            if isinstance(sentinel_token, str):
+                # Parse and re-serialize to ensure proper JSON format
+                parsed = json.loads(sentinel_token)
+                headers['openai-sentinel-token'] = json.dumps(parsed)
+            else:
+                headers['openai-sentinel-token'] = json.dumps(sentinel_token)
+        except Exception as e:
+            logger.warning(f"{self.log_prefix} [WARNING] Sentinel token serialization failed: {e}")
+            headers['openai-sentinel-token'] = sentinel_token
+            
         headers['oai-device-id'] = device_id or ""
         headers['oai-language'] = 'en-US'
 
-        logger.info(f"🔌 {self.log_prefix} [API] Generating video: {str(payload)[:100]}...")
+        # Formatted Payload Log
+        logger.info(f"====== � GENERATE VIDEO PAYLOAD ======")
+        logger.info(json.dumps(payload, indent=2))
+        logger.info("==========================================")
 
         try:
-            async with AsyncSession(impersonate="chrome120") as session:
+            # Use 'chrome' impersonate to match old code exactly (not 'chrome120')
+            async with AsyncSession(impersonate="chrome") as session:
                 response = await session.post(
                     url,
                     headers=headers,
@@ -169,12 +193,17 @@ class SoraApiClient:
                 )
 
                 if response.status_code == 200:
-                    logger.info(f"{self.log_prefix} [OK] [API] Generation started!")
                     try:
                         data = response.json()
+                        # Formatted Response Log
+                        logger.info(f"====== 📥 GENERATE VIDEO RESPONSE ======")
+                        logger.info(json.dumps(data, indent=2))
+                        logger.info("========================================")
+                        
                         task_id = data.get('id') or data.get('task_id')
                         return {"success": True, "task_id": task_id, "response": data}
                     except:
+                        logger.info(f"{self.log_prefix} [OK] [API] Generation started! Response: {response.text}")
                         return {"success": True, "response": response.text}
                 else:
                     logger.error(f"{self.log_prefix} [ERROR] [API] Generate failed ({response.status_code}): {response.text}")
@@ -190,7 +219,8 @@ class SoraApiClient:
         params = {"limit": limit}
         
         try:
-            async with AsyncSession(impersonate="chrome120") as session:
+            # Use 'chrome' to match old code
+            async with AsyncSession(impersonate="chrome") as session:
                 response = await session.get(
                     url,
                     headers=self.headers,
@@ -200,11 +230,13 @@ class SoraApiClient:
                 )
                 
                 if response.status_code == 200:
+                    # Log full response for debugging
+                    logger.info(f"[API] Get drafts success. Response: {response.text[:2000]}...") # Limit to avoid massive logs if too big
                     data = response.json()
                     items = data.get("items", data) if isinstance(data, dict) else data
                     return items
                 else:
-                     logger.warning(f"[API] Get drafts failed: {response.status_code}")
+                     logger.warning(f"[API] Get drafts failed: {response.status_code} - {response.text}")
                      return []
         except Exception as e:
             logger.error(f"[API] Get drafts exception: {e}")
@@ -217,7 +249,8 @@ class SoraApiClient:
         """
         # Priority 1: curl_cffi
         try:
-            async with AsyncSession(impersonate="chrome120") as session:
+            # Use 'chrome' to match old code
+            async with AsyncSession(impersonate="chrome") as session:
                 response = await session.get(
                     "https://sora.chatgpt.com/backend/nf/pending/v2",
                     headers=self.headers,
@@ -225,6 +258,8 @@ class SoraApiClient:
                     timeout=15
                 )
                 if response.status_code == 200:
+                    # Log full response for debugging
+                    logger.info(f"{self.log_prefix} [API] get_pending_tasks response: {response.text}")
                     data = response.json()
                     task_list = data if isinstance(data, list) else []
                     logger.info(f"{self.log_prefix} [API] get_pending_tasks found {len(task_list)} tasks")
@@ -317,28 +352,51 @@ class SoraApiClient:
             pass
         return {"error": "All credit checks failed"}
 
-    async def post_video(self, video_id: str, title: str, description: str, sentinel_token: str) -> Dict[str, Any]:
+    async def post_video(self, video_id: str, title: str, description: str, sentinel_token: str, generation_id: str = None) -> Dict[str, Any]:
         """
         Publish/post a video to get public URL.
+        Uses new payload structure with attachments_to_create.
         """
         url = "https://sora.chatgpt.com/backend/project_y/post"
         
+        # New Payload Structure
+        # Note: post_text maps to description/title or prompt.
         payload = {
-            "title": title or "Sora Video",
-            "description": description or "",
-            "visibility": "public"
+            "post_text": description or title or "Sora Video",
+            "attachments_to_create": []
         }
-        if video_id:
-            payload["video_id"] = video_id
+        
+        # Determine ID to use (generation_id preferred by API)
+        target_gen_id = generation_id
+        target_kind = "sora"
+        
+        # Heuristic: If video_id looks like generation_id (gen_) use it if generation_id missing
+        if not target_gen_id and video_id and video_id.startswith("gen_"):
+            target_gen_id = video_id
+            
+        # If we have a generation_id (or task_id treated as one?)
+        if target_gen_id:
+             payload["attachments_to_create"].append({
+                "generation_id": target_gen_id,
+                "kind": target_kind
+             })
+        elif video_id:
+             # Fallback to task_id if no gen_id
+             # Assuming 'task_id' field works or 'generation_id' accepts task IDs (unlikely but worth try as last resort)
+             key = "task_id" if video_id.startswith("task_") else "generation_id"
+             payload["attachments_to_create"].append({
+                key: video_id,
+                "kind": target_kind
+             })
 
         headers = self.headers.copy()
         headers['Content-Type'] = 'application/json'
         headers['openai-sentinel-token'] = json.dumps(json.loads(sentinel_token) if isinstance(sentinel_token, str) else sentinel_token)
         
-        logger.info(f"📤 {self.log_prefix} [API] Posting video {video_id}...")
+        logger.info(f"📤 {self.log_prefix} [API] Posting video {video_id} (GenID: {generation_id})...")
 
         try:
-            async with AsyncSession(impersonate="chrome120") as session:
+            async with AsyncSession(impersonate="chrome") as session:
                 response = await session.post(
                     url,
                     headers=headers,
@@ -353,21 +411,32 @@ class SoraApiClient:
                     with open("post_response_debug.json", "w") as f:
                         json.dump(data, f, indent=2)
                     
+                    # Extract post ID and share_ref - check both direct and nested locations
                     post_id = data.get('id')
-                    share_url = data.get('url')
-                    
-                    # Fallback: check inside 'post' object
+                    share_ref = data.get('share_ref')
                     if not post_id and 'post' in data:
                         post_id = data['post'].get('id')
-                    if not share_url and 'post' in data:
-                        share_url = data['post'].get('url')
+                        share_ref = data['post'].get('share_ref')
+                    
+                    # CRITICAL FIX: Construct proper URL for dyysy.com compatibility
+                    # Format: https://sora.chatgpt.com/p/{post_id}?psh={share_ref}
+                    # Note: post_id may or may not have 's_' prefix - add if missing
+                    share_url = None
+                    if post_id:
+                        # Ensure post_id has correct format (force s_ prefix as required by external tools)
+                        formatted_id = post_id if post_id.startswith('s_') else f"s_{post_id}"
                         
-                    # If we have a post ID but no URL, construct it
-                    if post_id and not share_url:
-                        share_url = f"https://sora.chatgpt.com/s/{post_id}"
+                        # Construct URL with share_ref param
+                        share_url = f"https://sora.chatgpt.com/p/{formatted_id}"
+                        if share_ref:
+                            share_url += f"?psh={share_ref}"
+                        
+                    if not share_url or not post_id:
+                        logger.error(f"{self.log_prefix} [ERROR] [API] Post succeeded but no post_id found in response")
+                        return {"success": False, "error": "No post_id in response"}
                         
                     logger.info(f"{self.log_prefix} [OK] [API] Video Published! ID: {post_id} | URL: {share_url}")
-                    return {"success": True, "post_id": post_id, "url": share_url}
+                    return {"success": True, "post_id": post_id, "url": share_url, "share_ref": share_ref}
 
 
                 else:
@@ -378,5 +447,49 @@ class SoraApiClient:
             logger.error(f"[ERROR] [API] Post exception: {e}")
             return {"success": False, "error": str(e)}
 
-
-
+    async def verify_post_exists(self, post_id: str, video_id: str = None) -> bool:
+        """
+        Verify if a post actually exists in user's profile feed.
+        Checks matching post_id OR matching video_id in attachments (task_id/generation_id).
+        """
+        try:
+            async with AsyncSession(impersonate="chrome") as session:
+                response = await session.get(
+                    "https://sora.chatgpt.com/backend/project_y/profile_feed/me?limit=8&cut=nf2",
+                    headers=self.headers,
+                    cookies=self.cookie_dict,
+                    timeout=15
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    items = data.get('items', [])
+                    
+                    target_post_id = post_id.replace("s_", "") if post_id else ""
+                    
+                    for item in items:
+                        post = item.get('post', {})
+                        
+                        # 1. Match Post ID
+                        current_post_id = post.get('id', "").replace("s_", "")
+                        if target_post_id and current_post_id == target_post_id:
+                            logger.info(f"{self.log_prefix} [OK] [VERIFY] Post {post_id} confirmed by Post ID!")
+                            return True
+                            
+                        # 2. Match Video ID (Task/Gen ID) in Attachments
+                        if video_id:
+                            attachments = post.get('attachments', [])
+                            for att in attachments:
+                                if att.get('task_id') == video_id or att.get('generation_id') == video_id:
+                                    logger.info(f"{self.log_prefix} [OK] [VERIFY] Post confirmed by Video ID match ({video_id}) inside Post {current_post_id}")
+                                    return True
+                    
+                    logger.warning(f"{self.log_prefix} [WARNING] [VERIFY] Post/Video not found in feed.")
+                    return False
+                else:
+                    logger.warning(f"{self.log_prefix} [VERIFY] Feed check failed: {response.status_code}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"[VERIFY] Error checking feed: {e}")
+            return False

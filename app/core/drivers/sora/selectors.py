@@ -69,6 +69,8 @@ class SoraSelectors:
 
     # Creation / Studio
     PROMPT_INPUT = [
+        "input[placeholder*='Describe']",
+        "div[class*='ProseMirror']",
         "textarea[placeholder*='Describe']",
         "textarea",
         "[role='textbox']",

@@ -75,7 +75,7 @@ class SoraApiDriver(APIOnlyDriver):
         # Prepare Payload
         from app.core.sentinel import get_sentinel_token
         try:
-            sentinel_payload = get_sentinel_token(flow="sora_create_task")
+            sentinel_payload = get_sentinel_token(flow="sora_2_create_task")
         except Exception as e:
             return VideoResult(success=False, error=f"Sentinel failed: {e}")
 
@@ -102,7 +102,15 @@ class SoraApiDriver(APIOnlyDriver):
         }
 
         if file_id:
-            clean_id = file_id.split("#")[0] if "#" in file_id else file_id
+            # Smart extraction: If file_id contains #, find the part starting with 'file_'
+            clean_id = file_id
+            if "#" in file_id:
+                parts = file_id.split("#")
+                for p in parts:
+                    if p.startswith("file_"):
+                         clean_id = p
+                         break
+            
             payload["inpaint_items"] = [{"kind": "file", "file_id": clean_id}]
 
         # Retry logic for heavy_load errors
@@ -153,7 +161,29 @@ class SoraApiDriver(APIOnlyDriver):
                     logger.error(f"[API] Max retries reached for heavy_load. Giving up.")
                     return VideoResult(success=False, error="Sora server under heavy load after 3 retries")
 
-            # Non-heavy_load error: Use fallback verification
+            # Parse error_code early to check for specific error types
+            parsed_error_code = None
+            try:
+                if isinstance(result.get("error"), str):
+                    error_data = json.loads(error_str) if error_str.startswith("{") else {}
+                    parsed_error_code = error_data.get("error", {}).get("code")
+                elif isinstance(result.get("error"), dict):
+                    parsed_error_code = result.get("error", {}).get("error", {}).get("code")
+            except:
+                pass
+
+            # CRITICAL: For too_many_concurrent_tasks, return FAIL immediately
+            # Do NOT run verification - it will find old tasks and incorrectly return SUCCESS
+            if parsed_error_code == "too_many_concurrent_tasks":
+                logger.warning(f"[API] too_many_concurrent_tasks - returning FAIL immediately (no verification)")
+                return VideoResult(
+                    success=False,
+                    task_id=None,
+                    error=error_str,
+                    error_code=parsed_error_code
+                )
+
+            # Non-heavy_load, non-concurrent_tasks error: Use fallback verification
             logger.warning(f"[API] Generation failed ({error_str}). Verifying if task started anyway...")
             try:
                 pending_tasks = await self.api_client.get_pending_tasks()
@@ -170,11 +200,23 @@ class SoraApiDriver(APIOnlyDriver):
             except Exception as e:
                 logger.warning(f"[API] Verification failed: {e}")
 
+            # Parse error_code from JSON error response
+            error_code = None
+            try:
+                if isinstance(result.get("error"), str):
+                    error_data = json.loads(error_str) if error_str.startswith("{") else {}
+                    error_code = error_data.get("error", {}).get("code")
+                elif isinstance(result.get("error"), dict):
+                    error_code = result.get("error", {}).get("error", {}).get("code")
+            except:
+                pass
+            
             # Non-heavy_load error without verification success
             return VideoResult(
                 success=False,
                 task_id=result.get("task_id"),
-                error=error_str
+                error=error_str,
+                error_code=error_code  # Pass parsed error code
             )
 
         # Should not reach here, but just in case
@@ -192,7 +234,7 @@ class SoraApiDriver(APIOnlyDriver):
         try:
             from app.core.sentinel import get_sentinel_token
             import json
-            token_data = get_sentinel_token(flow="sora_create_task")
+            token_data = get_sentinel_token(flow="sora_2_create_task")
             sentinel_token = json.dumps(json.loads(token_data) if isinstance(token_data, str) else token_data)
         except Exception:
             pass
@@ -216,12 +258,7 @@ class SoraApiDriver(APIOnlyDriver):
 
     async def upload_image(self, image_path: str) -> UploadResult:
         """Upload image via API"""
-        result = await self.api_client.upload_image(image_path)
-        return UploadResult(
-            success=result.get("success", False),
-            file_id=result.get("file_id"),
-            error=result.get("error")
-        )
+        return await self.api_client.upload_image(image_path)
 
     async def wait_for_completion(
         self,
@@ -282,12 +319,16 @@ class SoraApiDriver(APIOnlyDriver):
                             # Check for errors first (BUG FIX: Sora uses "kind" field for errors)
                             if draft.get("kind") == "sora_error" or draft.get("error_reason"):
                                 error_msg = draft.get("error_reason") or "Unknown error"
+                                if draft.get("kind") == "sora_error" and not draft.get("error_reason"):
+                                     error_msg = "Sora Error (likely content policy)"
+                                
                                 logger.error(f"[ERROR] Video generation failed: {error_msg}")
                                 # Return failed status - worker will mark job as failed
                                 return VideoData(
                                     id=draft.get("id"),
                                     download_url="",
-                                    status="failed"
+                                    status="failed",
+                                    error=error_msg # Pass specific error
                                 )
 
                             # Check for download URL
@@ -296,10 +337,11 @@ class SoraApiDriver(APIOnlyDriver):
                                 return VideoData(
                                     id=draft.get("id"),
                                     download_url=download_url,
-                                    status="completed"
+                                    status="completed",
+                                    generation_id=draft.get("generation_id")
                                 )
                             elif draft.get("status") == "failed":
-                                return VideoData(id=draft.get("id"), download_url="", status="failed")
+                                return VideoData(id=draft.get("id"), download_url="", status="failed", generation_id=draft.get("generation_id"))
                         
                         # FALLBACK: Match by prompt
                         if not task_id and match_prompt:
@@ -308,11 +350,16 @@ class SoraApiDriver(APIOnlyDriver):
                                 # Check for errors first (BUG FIX)
                                 if draft.get("kind") == "sora_error" or draft.get("error_reason"):
                                     error_msg = draft.get("error_reason") or "Unknown error"
+                                    # Handle specifickind error types if error_reason is missing
+                                    if draft.get("kind") == "sora_error" and not draft.get("error_reason"):
+                                         error_msg = "Sora Error (likely content policy)"
+                                    
                                     logger.error(f"[ERROR] Video generation failed: {error_msg}")
                                     return VideoData(
                                         id=draft.get("id"),
                                         download_url="",
-                                        status="failed"
+                                        status="failed",
+                                        error=error_msg  # Pass specific error
                                     )
 
                                 download_url = draft.get("url") or draft.get("downloadable_url") or draft.get("video_url")
@@ -320,7 +367,8 @@ class SoraApiDriver(APIOnlyDriver):
                                      return VideoData(
                                         id=draft.get("id"),
                                         download_url=download_url,
-                                        status="completed"
+                                        status="completed",
+                                        generation_id=draft.get("generation_id")
                                     )
 
             except Exception as e:

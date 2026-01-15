@@ -1,15 +1,15 @@
 {
   "post": {
-    "id": "69679f8abecc8191a26b08a156559ee0",
-    "shared_by": "user-kZo5hqildXu6fcW5ac6GteC8",
+    "id": "s_6968e54994ec8191b6088c21c42e1ce5",
+    "shared_by": "user-80ihqqowqFF6wBFGVWueObvo",
     "is_owner": true,
     "workspace_id": null,
     "posted_to_public": true,
     "post_locations": [
       "public"
     ],
-    "posted_at": 1768398730.745396,
-    "updated_at": 1768398730.745398,
+    "posted_at": 1768482121.581823,
+    "updated_at": 1768482121.581825,
     "like_count": 0,
     "recursive_reply_count": 0,
     "reply_count": 0,
@@ -17,19 +17,69 @@
     "unique_view_count": 0,
     "remix_count": 0,
     "user_liked": false,
-    "source": "project_y",
+    "source": "sy",
     "story_type": null,
-    "text": null,
+    "text": "T\u1ea1o video t\u1ee9 \u0111\u1ea1i m\u1ef9 nh\u00e2n trung qu\u1ed1c h\u1ed9i ng\u1ed9 t\u1ea1i ti\u1ec7c xu\u00e2n",
     "caption": null,
     "cover_photo_url": null,
-    "preview_image_url": "https://ogimg.chatgpt.com/?postId=69679f8abecc8191a26b08a156559ee0",
-    "attachments": [],
+    "preview_image_url": "https://ogimg.chatgpt.com/?postId=s_6968e54994ec8191b6088c21c42e1ce5",
+    "attachments": [
+      {
+        "id": "s_6968e54994ec8191b6088c21c42e1ce5-attachment-0",
+        "tags": [
+          "sora"
+        ],
+        "kind": "sora",
+        "generation_id": "gen_01kf0vxtzsewn8e2dz94jzbkt8",
+        "generation_type": "video_gen",
+        "url": "https://videos.openai.com/az/files/9912a71b9ce0798_00000000-8f7c-7283-8691-89a666c614e1%2Fdrvs%2Fmd%2Fraw?se=2026-01-19T00%3A00%3A00Z&sp=r&sv=2024-08-04&sr=b&skoid=5e5fc900-07cf-43e7-ab5b-314c0d877bb0&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-14T22%3A38%3A29Z&ske=2026-01-21T22%3A43%3A29Z&sks=b&skv=2024-08-04&sig=SzBHDDXl2BIQhfdxNYioDyVomXBK0oCQqKdig2Z2S8M%3D&ac=oaisdsorprwestus2",
+        "downloadable_url": "https://videos.openai.com/az/files/00000000-8f7c-7283-8691-89a666c614e1%2Fraw?se=2026-01-19T00%3A00%3A00Z&sp=r&sv=2024-08-04&sr=b&skoid=5e5fc900-07cf-43e7-ab5b-314c0d877bb0&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-14T22%3A38%3A29Z&ske=2026-01-21T22%3A43%3A29Z&sks=b&skv=2024-08-04&sig=jS9P8Y/VweTN4NdeRlzPqnMTFezTHHhWq9eYltxMZaU%3D&ac=oaisdsorprwestus2",
+        "download_urls": {
+          "watermark": "https://videos.openai.com/az/files/00000000-8f7c-7283-8691-89a666c614e1%2Fraw?se=2026-01-19T00%3A00%3A00Z&sp=r&sv=2024-08-04&sr=b&skoid=5e5fc900-07cf-43e7-ab5b-314c0d877bb0&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-14T22%3A38%3A29Z&ske=2026-01-21T22%3A43%3A29Z&sks=b&skv=2024-08-04&sig=jS9P8Y/VweTN4NdeRlzPqnMTFezTHHhWq9eYltxMZaU%3D&ac=oaisdsorprwestus2",
+          "no_watermark": null,
+          "endcard_watermark": null
+        },
+        "width": 640,
+        "height": 352,
+        "n_frames": 150,
+        "prompt": null,
+        "task_id": "task_01kf0vvwg6ewbr6ngzsnpn74n7",
+        "output_blocked": false,
+        "title": null,
+        "source": null,
+        "encodings": {
+          "source": {
+            "path": "https://videos.openai.com/az/files/00000000-8f7c-7283-8691-89a666c614e1%2Fraw?se=2026-01-19T00%3A00%3A00Z&sp=r&sv=2024-08-04&sr=b&skoid=5e5fc900-07cf-43e7-ab5b-314c0d877bb0&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-14T22%3A38%3A29Z&ske=2026-01-21T22%3A43%3A29Z&sks=b&skv=2024-08-04&sig=jS9P8Y/VweTN4NdeRlzPqnMTFezTHHhWq9eYltxMZaU%3D&ac=oaisdsorprwestus2"
+          },
+          "source_wm": {
+            "path": "https://videos.openai.com/az/files/00000000-8f7c-7283-8691-89a666c614e1%2Fraw?se=2026-01-19T00%3A00%3A00Z&sp=r&sv=2024-08-04&sr=b&skoid=5e5fc900-07cf-43e7-ab5b-314c0d877bb0&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-14T22%3A38%3A29Z&ske=2026-01-21T22%3A43%3A29Z&sks=b&skv=2024-08-04&sig=jS9P8Y/VweTN4NdeRlzPqnMTFezTHHhWq9eYltxMZaU%3D&ac=oaisdsorprwestus2"
+          },
+          "endcard_wm": null,
+          "thumbnail": {
+            "path": "https://videos.openai.com/az/files/3e199e682122b27_00000000-8f7c-7283-8691-89a666c614e1%2Fdrvs%2Fthumbnail%2Fraw?se=2026-01-19T00%3A00%3A00Z&sp=r&sv=2024-08-04&sr=b&skoid=5e5fc900-07cf-43e7-ab5b-314c0d877bb0&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-14T22%3A38%3A29Z&ske=2026-01-21T22%3A43%3A29Z&sks=b&skv=2024-08-04&sig=0cqbdW3jFOJYMHLwduvv2Kg8tEWuLrriJsYlIU/%2BQHk%3D&ac=oaisdsorprwestus2"
+          },
+          "unfurl": {
+            "path": "https://videos.openai.com/az/files/1017105372d8913_00000000-7e7c-7283-92d8-e447964c6220%2Fdrvs%2Flink_thumbnail%2Fraw?se=2026-01-19T00%3A00%3A00Z&sp=r&sv=2024-08-04&sr=b&skoid=5e5fc900-07cf-43e7-ab5b-314c0d877bb0&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-14T22%3A38%3A29Z&ske=2026-01-21T22%3A43%3A29Z&sks=b&skv=2024-08-04&sig=VhwHCgKNFEgiVjbtKdQdHxTmi2rEM%2BfvgsGg0GOLluk%3D&ac=oaisdsorprwestus2"
+          },
+          "md": {
+            "path": "https://videos.openai.com/az/files/9912a71b9ce0798_00000000-8f7c-7283-8691-89a666c614e1%2Fdrvs%2Fmd%2Fraw?se=2026-01-19T00%3A00%3A00Z&sp=r&sv=2024-08-04&sr=b&skoid=5e5fc900-07cf-43e7-ab5b-314c0d877bb0&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-14T22%3A38%3A29Z&ske=2026-01-21T22%3A43%3A29Z&sks=b&skv=2024-08-04&sig=SzBHDDXl2BIQhfdxNYioDyVomXBK0oCQqKdig2Z2S8M%3D&ac=oaisdsorprwestus2"
+          },
+          "gif": {
+            "path": "https://videos.openai.com/az/files/efbd2e87f197d6a_00000000-8f7c-7283-8691-89a666c614e1%2Fdrvs%2Fgif%2Fraw?se=2026-01-19T00%3A00%3A00Z&sp=r&sv=2024-08-04&sr=b&skoid=5e5fc900-07cf-43e7-ab5b-314c0d877bb0&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-14T22%3A38%3A29Z&ske=2026-01-21T22%3A43%3A29Z&sks=b&skv=2024-08-04&sig=hiBUNZl3xdhOOm6sjpWthx16HgKL2EtAuixU8uCowE0%3D&ac=oaisdsorprwestus2"
+          }
+        },
+        "asset_pointer": null,
+        "conversation_id": null,
+        "can_create_character": true,
+        "style": null
+      }
+    ],
     "parent_post_id": null,
     "root_post_id": null,
     "parent_path": null,
     "tombstoned_at": null,
-    "permalink": "http://localhost:3000/s/69679f8abecc8191a26b08a156559ee0",
-    "share_ref": "HXVzZXIta1pvNWhxaWxkWHU2ZmNXNWFjNkd0ZUM4._wr7f3RyOMU3",
+    "permalink": "https://sora.chatgpt.com/p/s_6968e54994ec8191b6088c21c42e1ce5",
+    "share_ref": "HXVzZXItODBpaHFxb3dxRkY2d0JGR1ZXdWVPYnZv._WC_5ptC2aKi",
     "permissions": {
       "can_read": true,
       "can_write": true,
@@ -46,8 +96,14 @@
     "verifications": [],
     "verification_info": null,
     "dislike_count": 0,
-    "remix_posts": null,
-    "ancestors": null,
+    "remix_posts": {
+      "items": [],
+      "cursor": null
+    },
+    "ancestors": {
+      "items": [],
+      "cursor": null
+    },
     "parent_post": null,
     "emoji": null,
     "is_featured": null,
@@ -57,8 +113,8 @@
     "vtt_url": null
   },
   "profile": {
-    "user_id": "user-kZo5hqildXu6fcW5ac6GteC8",
-    "username": "uyen247",
+    "user_id": "user-80ihqqowqFF6wBFGVWueObvo",
+    "username": "dasgfsdadasgfsdfgde",
     "profile_picture_url": "https://cdn.openai.com/sora/images/profile_placeholder_v4.png",
     "profile_picture_id": null,
     "profile_picture_file_id": null,
@@ -76,14 +132,14 @@
     "is_blocked": false,
     "followed_by": [],
     "plan_type": null,
-    "permalink": "https://sora.chatgpt.com/profile/uyen247",
+    "permalink": "https://sora.chatgpt.com/profile/dasgfsdadasgfsdfgde",
     "can_cameo": false,
-    "created_at": 1767968250.94533,
-    "updated_at": 1768344390.622959,
+    "created_at": 1768223374.499122,
+    "updated_at": 1768482121.504255,
     "banned_at": null,
     "calpico_is_enabled": true,
-    "can_message": true,
-    "sora_who_can_message_me": "everyone",
+    "can_message": false,
+    "sora_who_can_message_me": "followees_only",
     "chatgpt_who_can_message_me": "connections_only",
     "is_public_figure": false,
     "public_figure_name": null,
@@ -96,6 +152,8 @@
     "description": null,
     "birthday": null,
     "website": null,
+    "work": null,
+    "schools": null,
     "follows_you": false
   }
 }

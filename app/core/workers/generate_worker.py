@@ -96,7 +96,7 @@ class GenerateWorker(BaseWorker):
                 device_id=account.session.device_id,
                 user_agent=account.session.user_agent,
                 headless=True,
-                api_mode=True,
+                api_mode=True, # [REVERTED] Use API Driver (curl_cffi) - faster and no Cloudflare issues
                 account_email=account.email
             )
 
@@ -176,8 +176,10 @@ class GenerateWorker(BaseWorker):
                     error_msg = result.error or "Unknown error"
                     logger.warning(f"[WARNING] Job #{job.id.value} failed with error: {error_msg}")
 
-                    # Check for retryable errors with limit
-                    if "heavy_load" in str(error_msg) or "heavy_load" in str(getattr(result, 'error_code', '')):
+                    # Check for retryable errors with limit - use parsed error_code
+                    error_code = getattr(result, 'error_code', None)
+                    
+                    if error_code == "heavy_load" or "heavy_load" in str(error_msg):
                         retry_count = task.input_data.get("heavy_load_retry_count", 0)
                         if retry_count >= MAX_RETRY_COUNT:
                             logger.error(f"Job #{job.id.value} exceeded max retries (heavy_load)")
@@ -194,7 +196,7 @@ class GenerateWorker(BaseWorker):
                         await task_manager.generate_queue.put(task)
                         return
 
-                    if "too_many_concurrent_tasks" in str(error_msg) or "too_many_concurrent_tasks" in str(getattr(result, 'error_code', '')):
+                    if error_code == "too_many_concurrent_tasks":
                         retry_count = task.input_data.get("concurrent_retry_count", 0)
                         if retry_count >= MAX_RETRY_COUNT:
                             logger.error(f"Job #{job.id.value} exceeded max retries (too_many_concurrent)")
@@ -205,7 +207,7 @@ class GenerateWorker(BaseWorker):
                             self._remove_from_active_set(task.job_id)
                             return
 
-                        logger.warning(f"⚠️ Account #{account.id.value} maxed output (3 concurrent). Switching account... (retry {retry_count + 1}/{MAX_RETRY_COUNT})")
+                        logger.warning(f"⚠️ Account #{account.id.value} maxed out (3 concurrent). Switching account... (retry {retry_count + 1}/{MAX_RETRY_COUNT})")
 
                         # Exclude this account for this attempt
                         exclude_ids = task.input_data.get("exclude_account_ids", [])

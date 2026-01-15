@@ -27,10 +27,13 @@ class VideoResult:
         success: Whether generation was successful
         task_id: Task ID for polling (if success)
         error: Error message (if failed)
+        error_code: Parsed error code from API response (e.g., 'heavy_load', 'too_many_concurrent_tasks')
     """
     success: bool
     task_id: Optional[str] = None
     error: Optional[str] = None
+    error_code: Optional[str] = None
+    generation_id: Optional[str] = None
 
 
 @dataclass
@@ -84,6 +87,8 @@ class VideoData:
     download_url: str
     status: str
     progress_pct: Optional[float] = None
+    error: Optional[str] = None
+    generation_id: Optional[str] = None
 
     def is_complete(self) -> bool:
         """Check if video generation is complete"""

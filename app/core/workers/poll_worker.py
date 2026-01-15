@@ -176,6 +176,29 @@ class PollWorker(BaseWorker):
                 )
 
                 if video_data:
+                    # CRITICAL BUG FIX: Check if video actually succeeded or failed
+                    if video_data.status == "failed" or not video_data.download_url:
+                        # Video generation failed - mark job as FAILED, not DOWNLOAD
+                        # Use detailed error if available
+                        error_detail = video_data.error or video_data.status
+                        error_msg = f"Video generation failed: {error_detail}"
+                        logger.error(f"[FAILED] Job #{job.id.value}: {error_msg}")
+                        
+                        job.progress.status = JobStatus.FAILED
+                        job.progress.error_message = error_msg
+                        
+                        # Update task_state
+                        if not job.task_state:
+                            job.task_state = {}
+                        if "tasks" not in job.task_state:
+                            job.task_state["tasks"] = {}
+                        job.task_state["tasks"]["poll"] = {"status": "failed", "error": error_msg}
+                        job.task_state["current_task"] = None
+                        
+                        await job_repo.update(job)
+                        job_repo.commit()
+                        return  # Don't enqueue download!
+                    
                     # 4. Video ready! Enqueue download
                     logger.info(f"[OK] Job #{job.id.value} video ready!")
 
@@ -183,10 +206,11 @@ class PollWorker(BaseWorker):
                     job.progress.progress = 100
                     job.result.video_url = video_data.download_url
                     job.result.video_id = video_data.id
+                    job.result.generation_id = video_data.generation_id
 
                     # Update task_state - preserve existing data
                     if not job.task_state:
-                        job.task_state = {}
+                         job.task_state = {}
                     if "tasks" not in job.task_state:
                         job.task_state["tasks"] = {}
 
@@ -203,7 +227,8 @@ class PollWorker(BaseWorker):
                         task_type="download",
                         input_data={
                             "video_url": video_data.download_url,
-                            "video_id": video_data.id
+                            "video_id": video_data.id,
+                            "generation_id": video_data.generation_id
                         }
                     )
                     await task_manager.download_queue.put(dl_task)

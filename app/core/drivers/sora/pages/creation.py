@@ -175,7 +175,34 @@ class SoraCreationPage(BasePage):
             await asyncio.sleep(0.5)
         else:
             await self._snapshot("no_prompt_input")
-            raise Exception("Could not find prompt input field")
+            # [DEBUG] Dump HTML for analysis
+            await self._dump_html("no_prompt_input_dump")
+            
+            # Log diagnostic info
+            try:
+                title = await self.page.title()
+                url = self.page.url
+                content_preview = await self.page.content()
+                logger.error(f"[DEBUG] Page State: Title='{title}', URL='{url}'")
+                logger.error(f"[DEBUG] HTML Content Length: {len(content_preview)}")
+                print(f"!!! [DEBUG] Page State: Title='{title}', URL='{url}'")
+                print(f"!!! [DEBUG] HTML Content Length: {len(content_preview)}")
+                
+                # Check for common blocking elements
+                if "Verify your phone number" in content_preview:
+                    logger.error("[DEBUG] DETECTED: Phone Verification Screen")
+                    print("!!! [DEBUG] DETECTED: Phone Verification Screen")
+                if "Get started" in content_preview:
+                    logger.error("[DEBUG] DETECTED: 'Get Started' Splash")
+                    print("!!! [DEBUG] DETECTED: 'Get Started' Splash")
+                if "login" in url:
+                    logger.error("[DEBUG] DETECTED: Login Redirect")
+                    print("!!! [DEBUG] DETECTED: Login Redirect")
+            except Exception as e:
+                print(f"!!! [DEBUG] Error getting diagnostics: {e}")
+                pass
+                
+            raise Exception(f"Could not find prompt input field (Title: {title})")
 
 
 

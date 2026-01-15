@@ -350,7 +350,9 @@ class AccountService:
             if existing:
                 logger.info(f"   Found existing account {existing.id}")
                 account = existing
-                account.auth.login_mode = "manual"
+                # AccountAuth is frozen, use replace to update login_mode
+                from dataclasses import replace
+                account.auth = replace(account.auth, login_mode="manual")
             else:
                 logger.info("   Creating NEW account...")
                 account = Account(
@@ -491,7 +493,8 @@ class AccountService:
                 if credits_obj.error_code:
                      # Map error codes
                     if credits_obj.error_code == "TOKEN_EXPIRED":
-                        acc.session.token_status = "expired"
+                        from dataclasses import replace as dc_replace
+                        acc.session = dc_replace(acc.session, token_status="expired")
                         detail["status"] = "expired"
                         detail["message"] = "Token/cookies đã hết hạn"
                         results["expired"] += 1
@@ -510,8 +513,9 @@ class AccountService:
                     # Success
                     from datetime import datetime, timedelta
                     from ..domain.account import AccountCredits
+                    from dataclasses import replace as dc_replace
                     
-                    acc.session.token_status = "valid"
+                    acc.session = dc_replace(acc.session, token_status="valid")
                     
                     new_credits = AccountCredits(
                         id=acc.id,

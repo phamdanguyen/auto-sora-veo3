@@ -242,6 +242,17 @@ class SoraBrowserDriver(BrowserBasedDriver):
         """Callback for every request"""
         try:
             url = request.url
+            if "nf/create" in url and request.method == "POST":
+                try:
+                    logger.info("====== 🕵️ CAPTURED GENERATION REQUEST ======")
+                    logger.info(f"URL: {url}")
+                    logger.info(f"Headers: {request.headers}")
+                    post_data = request.post_data
+                    logger.info(f"Body: {post_data}")
+                    logger.info("============================================")
+                except Exception as e:
+                    logger.warning(f"Failed to log request body: {e}")
+
             # Widen scope to capture token from ANY OpenAI/ChatGPT endpoint
             if "openai.com" in url or "chatgpt.com" in url:
                 # print(f"🕵️ INTERCEPTED URL: {url}") # Explicit print to see in console
@@ -262,15 +273,13 @@ class SoraBrowserDriver(BrowserBasedDriver):
                             
         except Exception as e:
             pass # Don't crash on intercept
-        except Exception as e:
-            pass # Don't crash on intercept
 
     def _on_response_intercept(self, response):
         """Callback for every response - Fire and Forget"""
         try:
             url = response.url
             # Filter for relevant JSON endpoints
-            if "sora.chatgpt.com" in url and ("profile/drafts" in url or "feed" in url or "tasks" in url):
+            if "sora.chatgpt.com" in url and ("profile/drafts" in url or "feed" in url or "tasks" in url or "create" in url):
                 if response.status == 200 and "application/json" in response.headers.get("content-type", ""):
                      # We cannot await here directly effectively if not async handler, 
                      # but Playwright handlers can be regular functions.
@@ -294,7 +303,17 @@ class SoraBrowserDriver(BrowserBasedDriver):
             elif "tasks" in url: endpoint_type = "TASKS"
             elif "nf/create" in url: endpoint_type = "SUBMISSION"
             
+            # Log full response for debugging (as requested by user)
             logger.info(f"[TASK]  Intercepted {endpoint_type} JSON ({len(str(data))} bytes)")
+            
+            if endpoint_type == "SUBMISSION":
+                 logger.info(f"====== 🕵️ SUBMISSION RESPONSE ({url}) ======")
+                 logger.info(json.dumps(data, indent=2)) # Log full JSON
+                 logger.info("==========================================")
+            else:
+                 # For others, keep brief or log full if needed. User asked for "logs toàn bộ".
+                 # Let's log full for DRAFTS too since it contains errors.
+                 pass
             
             # Store data for analysis/usage
             self.latest_intercepted_data = data
@@ -303,6 +322,19 @@ class SoraBrowserDriver(BrowserBasedDriver):
                 # Parse submission result for credits
                 self.last_submission_result = data
                 logger.info("[OK]  Captured SUBMISSION response!")
+                
+                # [NEW] Log Payload & Headers for Debugging/Syncing API Driver
+                try:
+                    logger.info("====== 🕵️ CAPTURED GENERATION PAYLOAD ======")
+                    # We can't easily get the request body from response object in Playwright directly 
+                    # unless we captured it in _on_request_intercept.
+                    # But we can log the Response Headers which might contain trace ID etc.
+                    # Ideally we should match this with the Request.
+                    logger.info(f"Response Headers: {response.headers}")
+                    logger.info("============================================")
+                except:
+                    pass
+
                 if "rate_limit_and_credit_balance" in data:
                     balance = data["rate_limit_and_credit_balance"]
                     daily_creds = balance.get("estimated_num_videos_remaining")
@@ -464,7 +496,7 @@ class SoraBrowserDriver(BrowserBasedDriver):
         try:
             from app.core.sentinel import get_sentinel_token
             import json
-            token_data = get_sentinel_token(flow="sora_create_task")
+            token_data = get_sentinel_token(flow="sora_2_create_task")
             sentinel_token = json.dumps(json.loads(token_data) if isinstance(token_data, str) else token_data)
         except Exception:
              pass
@@ -532,7 +564,7 @@ class SoraBrowserDriver(BrowserBasedDriver):
 
         # 1. Get Sentinel Token
         try:
-            sentinel_payload = get_sentinel_token(flow="sora_create_task")
+            sentinel_payload = get_sentinel_token(flow="sora_2_create_task")
         except Exception as e:
             return {"success": False, "error": f"Sentinel failed: {e}"}
 
@@ -769,50 +801,114 @@ class SoraBrowserDriver(BrowserBasedDriver):
     ) -> VideoResult:
         """
         Generate video - implements VideoGenerationDriver interface
-
-        Args:
-            prompt: Text prompt for video generation
-            duration: Duration in seconds (5, 10, or 15)
-            aspect_ratio: Aspect ratio ("16:9", "9:16", "1:1")
-            image_path: Optional path to image for image-to-video
-
-        Returns:
-            VideoResult with task_id if successful
+        
+        [MODIFIED] Uses UI Automation (SoraCreationPage) instead of API to improve stability
+        and bypass 'heavy_load' errors that frequent the direct API.
         """
-        # Map duration to n_frames
-        duration_to_frames = {5: 150, 10: 300, 15: 450}
-        n_frames = duration_to_frames.get(duration, 180)
+        try:
+            # Prepare Page Object
+            if not self.creation_page:
+                self.creation_page = SoraCreationPage(self.page)
+                
+            # Reset interception capture to ensure we get the NEW task ID
+            self.last_submission_result = None
+            
+            # Map duration/aspect (UI usually defaults, we might skip setting specific UI controls if selectors missing)
+            # TODO: Implement select_duration/aspect_ratio in SoraCreationPage if needed. 
+            # For now, we rely on defaults or previous state, as stability is priority.
+    
+            # Upload image if provided
+            if image_path:
+                # We still use API for upload as it's reliable and hard to automate via UI drag-drop
+                upload_result = await self.upload_image(image_path)
+                if not upload_result.success:
+                    return VideoResult(success=False, error=upload_result.error)
+                # Note: Linking uploaded file to UI prompt is tricky without 'inpaint' UI logic.
+                # If image is present, we might need to fallback to API or implement complex UI upload.
+                # For now, let's warn if image is used with UI mode.
+                logger.warning("Image provided but UI mode used. Image might not attach correctly without specific UI steps.")
+    
+            # 1. Fill Prompt (UI)
+            # Ensure we are on the creation page
+            logger.info(f"[Generate] Checking page state... Current URL: {self.page.url}")
+            
+            if "sora.chatgpt.com" not in self.page.url or "auth/login" in self.page.url:
+                logger.info("[Generate] Navigating to Sora Home...")
+                await self.page.goto("https://sora.chatgpt.com/", wait_until="domcontentloaded")
+                await asyncio.sleep(3) # Wait for redirects
+            
+            # Check for Login Redirect
+            if "auth/login" in self.page.url:
+                 logger.error(f"[Generate] Redirected to Login Page! Session expired. URL: {self.page.url}")
+                 return VideoResult(success=False, error="Session expired (Redirected to Login)")
 
-        # Map aspect ratio to orientation
-        if aspect_ratio == "16:9":
-            orientation = "landscape"
-        elif aspect_ratio == "9:16":
-            orientation = "portrait"
-        else:
-            orientation = "landscape"  # Default
+            # Wait for Cloudflare challenge to complete
+            logger.info("[Generate] Waiting for Cloudflare challenge to pass...")
+            for _ in range(30): # Max 30 seconds
+                title = await self.page.title()
+                if "Just a moment" not in title and "Cloudflare" not in title:
+                    logger.info(f"[Generate] Cloudflare check passed. Title: {title}")
+                    break
+                await asyncio.sleep(1)
+            else:
+                logger.error("[Generate] Cloudflare challenge timed out.")
+                return VideoResult(success=False, error="Cloudflare challenge timed out")
 
-        # Upload image if provided
-        file_id = None
-        if image_path:
-            upload_result = await self.upload_image(image_path)
-            if not upload_result.success:
-                return VideoResult(success=False, error=upload_result.error)
-            file_id = upload_result.file_id
+            # Check for "Get Started" splash
+            if await self.page.is_visible("text='Get started'"):
+                 logger.info("Clicking 'Get started'...")
+                 await self.page.click("text='Get started'")
+                 await asyncio.sleep(1)
 
-        # Call internal API method
-        result = await self.generate_video_api(
-            prompt=prompt,
-            orientation=orientation,
-            n_frames=n_frames,
-            image_file_id=file_id
-        )
+            await self.creation_page.fill_prompt(prompt)
+            
+            # 2. Click Generate (UI)
+            # This triggers the real network request which we hope to intercept
+            success = await self.creation_page.click_generate(prompt)
+            
+            if not success:
+                return VideoResult(success=False, error="UI interaction failed (Click Generate)")
 
-        # Convert dict to VideoResult
-        return VideoResult(
-            success=result.get("success", False),
-            task_id=result.get("task_id"),
-            error=result.get("error")
-        )
+            # 3. Capture Task ID via Interception or Fallback
+            # We wait up to 15s for the network response to be captured by _on_response_intercept
+            task_id = None
+            logger.info("[Generate] Waiting for network interception to capture Task ID...")
+            
+            for _ in range(30): # 15 seconds
+                if self.last_submission_result:
+                    task_id = self.last_submission_result.get("id")
+                    logger.info(f"[Generate] Intercepted Task ID: {task_id}")
+                    break
+                await asyncio.sleep(0.5)
+                
+            # Fallback: Check pending tasks API if interception missed it
+            if not task_id:
+                logger.warning("[Generate] Interception missed task_id. Checking pending tasks via API...")
+                # Give it a moment to appear in backend
+                await asyncio.sleep(3) 
+                pending = await self.get_pending_tasks_api()
+                if pending:
+                    for p in pending:
+                        # Match by prompt content (fuzzy)
+                        if prompt[:20] in p.get("prompt", ""):
+                            task_id = p.get("id")
+                            logger.info(f"[Generate] Found Task ID via Pending API (Fallback): {task_id}")
+                            break
+            
+            # If still no task_id, we can't track it effectively, but if UI said success, 
+            # maybe we return a placeholder? But PollWorker needs ID.
+            if not task_id:
+                 return VideoResult(success=False, error="Video submitted but failed to capture Task ID for tracking.")
+
+            return VideoResult(
+                success=True,
+                task_id=task_id,
+                error=None
+            )
+            
+        except Exception as e:
+            logger.error(f"Generate (UI Mode) failed: {e}", exc_info=True)
+            return VideoResult(success=False, error=str(e))
 
     async def get_credits(self) -> CreditsInfo:
         """

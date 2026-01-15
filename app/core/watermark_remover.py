@@ -2,6 +2,7 @@ from curl_cffi import requests
 import urllib.parse
 import logging
 import os
+import asyncio
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -39,21 +40,41 @@ class WatermarkRemover:
             
             logger.info(f"[WATERMARK] Fetching clean URL for: {sora_share_url}")
             
-            # Use curl_cffi to impersonate Chrome and send POST Form Data
-            # This bypasses potential bot protection
-            response = requests.post(
-                WatermarkRemover.BASE_URL,
-                data={"url": sora_share_url},
-                impersonate="chrome110",
-                headers={"Content-Type": "application/x-www-form-urlencoded"}, 
+            # DEBUG: Use GET request with Encoded URL Path as seen in successful logs
+            # Format: https://api.dyysy.com/links2026/{ENCODED_URL}
+            import urllib.parse
+            encoded_url = urllib.parse.quote(sora_share_url, safe='')
+            target_url = f"{WatermarkRemover.BASE_URL}/{encoded_url}"
+            
+            logger.info(f"[WATERMARK] Requesting GET: {target_url}")
+            
+            # Use curl_cffi to impersonate Chrome
+            response = requests.get(
+                target_url,
+                impersonate="chrome",
                 timeout=30
             )
             
+            # DEBUG: Log raw response for troubleshooting
+            # DEBUG: Log raw response for troubleshooting
+            raw_text = response.text if response.text else "(empty)"
+            logger.info(f"[WATERMARK] API Response Status: {response.status_code}")
+            logger.info(f"[WATERMARK] API Raw Response: {raw_text}")
+            
             if response.status_code != 200:
-                logger.error(f"[WATERMARK] API returned error: {response.status_code} - {response.text[:200]}")
+                logger.error(f"[WATERMARK] API returned error: {response.status_code} - {raw_text}")
                 return None
             
-            data = response.json()
+            # Handle empty response
+            if not response.text or response.text.strip() == "":
+                logger.error("[WATERMARK] API returned empty response")
+                return None
+            
+            try:
+                data = response.json()
+            except Exception as json_err:
+                logger.error(f"[WATERMARK] JSON parse failed: {json_err}. Raw: {raw_text}")
+                return None
             
             # Extract the 'mp4' link from 'data.links' object (new format)
             # Structure: {"ok": true, "data": {"links": {"mp4": "...", "mp4_wm": "...", ...}}}
@@ -81,6 +102,8 @@ class WatermarkRemover:
                 return clean_url
             
             logger.warning(f"[WATERMARK] Clean URL not found in response. Data keys: {list(data.keys())}")
+            # Log full data structure for debugging
+            logger.warning(f"[WATERMARK] Full response data: {data}")
             return None
             
             
@@ -94,7 +117,8 @@ class WatermarkRemover:
         api_client,  # Type: SoraApiClient
         sentinel_token: str,
         title: str = "Sora Video",
-        description: str = ""
+        description: str = "",
+        generation_id: str = None
     ) -> Optional[str]:
         """
         Full flow:
@@ -106,17 +130,19 @@ class WatermarkRemover:
             video_id: The ID of the video to process.
             api_client: Instance of SoraApiClient to handle the post request.
             sentinel_token: Token required for posting.
+            generation_id: Optional Generation ID (preferred for posting)
             
         Returns:
             str: The clean video URL (mp4) if successful.
         """
         # 1. Post Video
-        logger.info(f"[WATERMARK] Processing video {video_id} for watermark removal...")
+        logger.info(f"[WATERMARK] Processing video {video_id} (GenID: {generation_id}) for watermark removal...")
         post_result = await api_client.post_video(
             video_id=video_id,
             title=title,
             description=description,
-            sentinel_token=sentinel_token
+            sentinel_token=sentinel_token,
+            generation_id=generation_id
         )
         
         if not post_result.get("success"):
@@ -129,6 +155,24 @@ class WatermarkRemover:
             return None
             
         logger.info(f"[WATERMARK] Video posted successfully: {share_url}")
+        
+        # 1.5 Verify Post Exists in Feed (User Requested Logic)
+        # "Retry until match between draft id and post"
+        verified = False
+        post_id = post_result.get("post_id")
+        
+        if post_id:
+            logger.info(f"[VERIFY] Verifying post {post_id} visibility in feed...")
+            for attempt in range(10): # Retry for ~50 seconds
+                # Pass video_id for deeper verification
+                if await api_client.verify_post_exists(post_id, video_id=video_id):
+                    verified = True
+                    break
+                logger.info(f"[VERIFY] Post not found in feed yet. Retrying in 5s... ({attempt+1}/10)")
+                await asyncio.sleep(5)
+                
+            if not verified:
+                logger.warning(f"[VERIFY] Post {post_id} NOT found in feed after retries. Proceeding but Watermark Removal might fail.")
         
         # 2. Get Clean URL
         # wait a bit for propagation? usually instant.

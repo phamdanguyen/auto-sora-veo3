@@ -59,6 +59,7 @@ class DownloadWorker(BaseWorker):
 
             download_url = task.input_data.get("video_url")
             video_id = task.input_data.get("video_id") or job.result.video_id
+            generation_id = task.input_data.get("generation_id") or (job.result.generation_id if job.result else None)
             
             if not download_url:
                 logger.error(f"Job #{job.id.value} missing download_url")
@@ -101,9 +102,10 @@ class DownloadWorker(BaseWorker):
                             video_id=video_id,
                             api_client=api_client,
                             sentinel_token=sentinel_token,
-                            title=job.spec.prompt[:50]  # Use prompt as title
+                            title=job.spec.prompt[:50] + "..." if job.spec.prompt else "Sora Video",
+                            description=job.spec.prompt or "",
+                            generation_id=generation_id
                         )
-                        
                         if clean_url:
                             logger.info(f"[WATERMARK] Success! Switching download to clean URL.")
                             download_url = clean_url
