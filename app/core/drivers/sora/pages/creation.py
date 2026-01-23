@@ -797,7 +797,7 @@ class SoraCreationPage(BasePage):
             # Method 5: Aggressive Regex on Body Text (Client Side)
             try:
                 # Execute JS to find link in body text
-                js_link = await self.page.evaluate("""() => {
+                js_link = await self.page.evaluate(r"""() => {
                     const match = document.body.innerText.match(/https:\/\/sora\.chatgpt\.com\/share\/[\w-]+/);
                     return match ? match[0] : null;
                 }""")

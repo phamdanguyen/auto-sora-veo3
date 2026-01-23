@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['scripts/tools/keygen.py'],
+    ['scripts\\tools\\keygen.py'],
     pathex=[],
     binaries=[],
     datas=[],

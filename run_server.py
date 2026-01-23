@@ -1,6 +1,20 @@
 import sys
+import os
+
+# Auto-detect and use venv if not already running in it
+if sys.prefix == sys.base_prefix:
+    venv_python = os.path.join(os.path.dirname(__file__), "venv", "bin", "python")
+    if os.path.exists(venv_python):
+        # Re-execute the script with the venv python
+        print(f"🔄 Switching to virtual environment: {venv_python}")
+        os.execv(venv_python, [venv_python] + sys.argv)
+
 import asyncio
 import uvicorn
+from dotenv import load_dotenv
+
+# Load environment variables from .env
+load_dotenv()
 
 if __name__ == "__main__":
     # Enforce Proactor Event Loop for Playwright on Windows

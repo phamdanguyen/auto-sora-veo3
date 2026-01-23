@@ -267,7 +267,7 @@ class SoraSelectors:
 
     # Prompt Verification in Detail View
     PROMPT_DISPLAY = [
-        "div.max-h-\[50vh\].min-h-10.w-full.overflow-y-auto", # User provided
+        r"div.max-h-\[50vh\].min-h-10.w-full.overflow-y-auto", # User provided
         "div[class*='overflow-y-auto'] p",
         "div[class*='overflow-y-auto']"
     ]

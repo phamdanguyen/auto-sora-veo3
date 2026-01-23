@@ -19,3 +19,6 @@ pytest-asyncio
 pytest-cov
 pytest-mock
 httpx
+aiohttp
+pybase64
+python-dotenv

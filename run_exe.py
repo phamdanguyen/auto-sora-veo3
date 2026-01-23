@@ -366,20 +366,20 @@ if __name__ == "__main__":
         
         # --- END LICENSE CHECK ---
         
-        # Diagnostics: Check CLR
-        try:
-            log_message("Importing clr (pythonnet)...")
-            import clr
-            log_message("Adding references...")
-            clr.AddReference("System.Windows.Forms")
-            clr.AddReference("System.Threading")
-            
-            log_message("Importing System.Windows.Forms...")
-            import System.Windows.Forms
-            log_message("✅ .NET dependencies loaded.")
-        except Exception as e:
-            log_message(f"⚠️ Failed to import clr/System: {e}")
-            log_message("Create window might fail if this is required for WinForms.")
+        # Diagnostics: Check CLR - DISABLED to prevent crash on Wine/Systems without .NET
+        # try:
+        #     log_message("Importing clr (pythonnet)...")
+        #     import clr
+        #     log_message("Adding references...")
+        #     clr.AddReference("System.Windows.Forms")
+        #     clr.AddReference("System.Threading")
+        #     
+        #     log_message("Importing System.Windows.Forms...")
+        #     import System.Windows.Forms
+        #     log_message("✅ .NET dependencies loaded.")
+        # except Exception as e:
+        #     log_message(f"⚠️ Failed to import clr/System: {e}")
+        #     log_message("Create window might fail if this is required for WinForms.")
 
         # Configure Playwright for frozen environment
         if getattr(sys, 'frozen', False):
